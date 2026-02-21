@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}PKB — Topics{% endblock %}
+{% block content %}
+<h1>Topics</h1>
+<div class="filter-bar">
+    <a href="/topics?status=all" {% if status == 'all' %}class="active"{% endif %}>All</a>
+    <a href="/topics?status=pending" {% if status == 'pending' %}class="active"{% endif %}>Pending</a>
+    <a href="/topics?status=approved" {% if status == 'approved' %}class="active"{% endif %}>Approved</a>
+    <a href="/topics?status=merged" {% if status == 'merged' %}class="active"{% endif %}>Merged</a>
+</div>
+{% if topics %}
+<table>
+    <thead>
+        <tr>
+            <th>Canonical</th>
+            <th>Status</th>
+            <th>Merged Into</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for t in topics %}
+        <tr>
+            <td>{{ t.canonical }}</td>
+            <td>{{ t.status }}</td>
+            <td>{{ t.merged_into or '-' }}</td>
+            <td>
+                {% if t.status == 'pending' %}
+                <form method="post" action="/topics/{{ t.canonical }}/approve" style="display:inline;">
+                    <button type="submit" class="btn-sm">Approve</button>
+                </form>
+                <form method="post" action="/topics/{{ t.canonical }}/reject" style="display:inline;">
+                    <button type="submit" class="btn-sm btn-danger">Reject</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No topics found.</p>
+{% endif %}
+{% endblock %}

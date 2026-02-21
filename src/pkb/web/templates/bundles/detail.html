@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}PKB — {{ bundle.bundle_id }}{% endblock %}
+{% block content %}
+<h1>{{ bundle.bundle_id }}</h1>
+<div class="bundle-meta">
+    <p><strong>KB:</strong> {{ bundle.kb }}</p>
+    <p><strong>Summary:</strong> {{ bundle.summary or '(none)' }}</p>
+    <p><strong>Domains:</strong> {{ bundle.domains }}</p>
+    <p><strong>Topics:</strong> {{ bundle.topics }}</p>
+    <p><strong>Created:</strong> {{ bundle.created_at }}</p>
+</div>
+<form method="post" action="/bundles/{{ bundle.bundle_id }}/delete"
+      onsubmit="return confirm('Delete this bundle?');">
+    <button type="submit" class="btn-danger">Delete</button>
+</form>
+<a href="/bundles">&laquo; Back to list</a>
+{% endblock %}

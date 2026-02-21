@@ -1,0 +1,25 @@
+domains:
+  - id: dev
+    label_ko: 개발
+    label_en: Development
+  - id: investing
+    label_ko: 투자
+    label_en: Investing
+  - id: learning
+    label_ko: 학습
+    label_en: Learning
+  - id: health
+    label_ko: 건강
+    label_en: Health
+  - id: hobby
+    label_ko: 취미
+    label_en: Hobby
+  - id: self
+    label_ko: 자기성찰
+    label_en: Self
+  - id: side-project
+    label_ko: 사이드프로젝트
+    label_en: Side Project
+  - id: work
+    label_ko: 업무
+    label_en: Work

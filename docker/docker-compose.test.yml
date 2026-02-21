@@ -1,0 +1,18 @@
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: pkb_test
+      POSTGRES_USER: pkb_test
+      POSTGRES_PASSWORD: pkb_test
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  chromadb-test:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    environment:
+      ANONYMIZED_TELEMETRY: "false"

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}PKB — Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="stats">
+    <div class="stat-card">
+        <h2>{{ total_bundles }}</h2>
+        <p>Total Bundles</p>
+    </div>
+</div>
+{% if recent_bundles %}
+<h2>Recent Bundles</h2>
+<ul>
+    {% for bid in recent_bundles %}
+    <li><a href="/bundles/{{ bid }}">{{ bid }}</a></li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

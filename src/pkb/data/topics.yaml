@@ -1,0 +1,171 @@
+# PKB Topics (L2 Controlled Vocabulary) — Seed
+# status: approved | pending | merged
+# merged_into: merge target canonical (when status=merged)
+topics:
+  # --- dev ---
+  - canonical: python
+    aliases: [파이썬, Python3]
+    status: approved
+  - canonical: rust
+    aliases: [러스트]
+    status: approved
+  - canonical: typescript
+    aliases: [TS, 타입스크립트]
+    status: approved
+  - canonical: system-design
+    aliases: [시스템설계, architecture, 아키텍처]
+    status: approved
+  - canonical: cli-tools
+    aliases: [CLI, command-line]
+    status: approved
+  - canonical: testing
+    aliases: [테스트, TDD, unit-test]
+    status: approved
+  - canonical: devops
+    aliases: [CI/CD, deployment, 배포]
+    status: approved
+  - canonical: llm-api
+    aliases: [LLM-API, API, openai-api, anthropic-api]
+    status: approved
+  - canonical: embedding
+    aliases: [임베딩, vector-embedding]
+    status: approved
+  - canonical: vector-db
+    aliases: [벡터DB, VectorDB, lancedb, chromadb]
+    status: approved
+  - canonical: prompt-engineering
+    aliases: [프롬프트, prompt-design]
+    status: approved
+  - canonical: agent
+    aliases: [에이전트, AI-agent, agentic]
+    status: approved
+  - canonical: fine-tuning
+    aliases: [파인튜닝, LoRA, PEFT]
+    status: approved
+  - canonical: multi-llm
+    aliases: [멀티LLM, multi-model]
+    status: approved
+  - canonical: local-llm
+    aliases: [로컬LLM, ollama, llama]
+    status: approved
+
+  # --- investing ---
+  - canonical: bitcoin
+    aliases: [비트코인, btc, BTC]
+    status: approved
+  - canonical: ethereum
+    aliases: [이더리움, eth, ETH]
+    status: approved
+  - canonical: options-trading
+    aliases: [옵션, options, 옵션매매]
+    status: approved
+  - canonical: macro-economics
+    aliases: [거시경제, macro]
+    status: approved
+  - canonical: portfolio
+    aliases: [포트폴리오, asset-allocation]
+    status: approved
+  - canonical: defi
+    aliases: [디파이, DeFi]
+    status: approved
+
+  # --- learning ---
+  - canonical: rag
+    aliases: [RAG, retrieval-augmented-generation, 검색증강생성]
+    status: approved
+  - canonical: knowledge-management
+    aliases: [지식관리, PKM, personal-knowledge]
+    status: approved
+  - canonical: note-taking
+    aliases: [노트, Obsidian, Notion]
+    status: approved
+  - canonical: learning-methods
+    aliases: [학습법, study-techniques]
+    status: approved
+  - canonical: history
+    aliases: [역사]
+    status: approved
+  - canonical: physics
+    aliases: [물리학, 물리]
+    status: approved
+  - canonical: philosophy
+    aliases: [철학]
+    status: approved
+  - canonical: linguistics
+    aliases: [언어학, language]
+    status: approved
+  - canonical: mathematics
+    aliases: [수학, math]
+    status: approved
+
+  # --- health ---
+  - canonical: exercise
+    aliases: [운동, workout, fitness]
+    status: approved
+  - canonical: nutrition
+    aliases: [영양, diet, 식이]
+    status: approved
+  - canonical: sleep
+    aliases: [수면, 잠]
+    status: approved
+  - canonical: mental-health
+    aliases: [정신건강, mindfulness]
+    status: approved
+  - canonical: boxing
+    aliases: [복싱]
+    status: approved
+
+  # --- hobby ---
+  - canonical: guitar
+    aliases: [기타, 일렉기타, acoustic-guitar]
+    status: approved
+  - canonical: piano
+    aliases: [피아노, keyboard]
+    status: approved
+  - canonical: music-theory
+    aliases: [음악이론, harmony, 화성학]
+    status: approved
+
+  # --- self ---
+  - canonical: self-reflection
+    aliases: [자기성찰, introspection]
+    status: approved
+  - canonical: productivity
+    aliases: [생산성, time-management]
+    status: approved
+  - canonical: career
+    aliases: [커리어, career-development]
+    status: approved
+  - canonical: decision-making
+    aliases: [의사결정]
+    status: approved
+
+  # --- side-project ---
+  - canonical: llm-chat-exporter
+    aliases: [chat-exporter, 익스포터]
+    status: approved
+  - canonical: pkb
+    aliases: [private-knowledge-base]
+    status: approved
+  - canonical: chrome-extension
+    aliases: [크롬확장, browser-extension]
+    status: approved
+
+  # --- work ---
+  - canonical: team-management
+    aliases: [팀관리, leadership]
+    status: approved
+  - canonical: code-review
+    aliases: [코드리뷰, PR-review]
+    status: approved
+  - canonical: interviewing
+    aliases: [면접, hiring]
+    status: approved
+
+  # --- cross-domain ---
+  - canonical: automation
+    aliases: [자동화, workflow-automation]
+    status: approved
+  - canonical: data-pipeline
+    aliases: [데이터파이프라인, ETL]
+    status: approved

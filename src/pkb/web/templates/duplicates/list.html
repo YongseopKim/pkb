@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}PKB — Duplicates{% endblock %}
+{% block content %}
+<h1>Duplicate Pairs</h1>
+<div class="filter-bar">
+    <a href="/duplicates?status=pending" {% if status == 'pending' %}class="active"{% endif %}>Pending</a>
+    <a href="/duplicates?status=confirmed" {% if status == 'confirmed' %}class="active"{% endif %}>Confirmed</a>
+    <a href="/duplicates?status=dismissed" {% if status == 'dismissed' %}class="active"{% endif %}>Dismissed</a>
+    <a href="/duplicates?status=all" {% if status == 'all' %}class="active"{% endif %}>All</a>
+</div>
+{% if pairs %}
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Bundle A</th>
+            <th>Bundle B</th>
+            <th>Similarity</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in pairs %}
+        <tr>
+            <td>{{ p.id }}</td>
+            <td><a href="/bundles/{{ p.bundle_a }}">{{ p.bundle_a }}</a></td>
+            <td><a href="/bundles/{{ p.bundle_b }}">{{ p.bundle_b }}</a></td>
+            <td>{{ "%.2f"|format(p.similarity) }}</td>
+            <td>{{ p.status }}</td>
+            <td>
+                {% if p.status == 'pending' %}
+                <form method="post" action="/duplicates/{{ p.id }}/dismiss" style="display:inline;">
+                    <button type="submit" class="btn-sm">Dismiss</button>
+                </form>
+                <form method="post" action="/duplicates/{{ p.id }}/confirm" style="display:inline;">
+                    <button type="submit" class="btn-sm btn-danger">Confirm</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No duplicate pairs found.</p>
+{% endif %}
+{% endblock %}

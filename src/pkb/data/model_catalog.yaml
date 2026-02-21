@@ -1,0 +1,165 @@
+# PKB Model Catalog
+# Reference pricing and recommended tier assignments for LLM providers.
+# Prices: USD per million tokens (MTok)
+# Updated: 2026-02-22
+#
+# Tiers:
+#   1 - Budget/Fast: metadata extraction, simple structured output
+#   2 - Standard: chat, RAG, complex extraction
+#   3 - Premium: complex reasoning, highest quality output
+#
+# Sources:
+#   Anthropic: https://platform.claude.com/docs/en/about-claude/pricing
+#   OpenAI:    https://platform.openai.com/docs/pricing
+#   Google:    https://ai.google.dev/gemini-api/docs/pricing
+#   xAI:       https://docs.x.ai/developers/models
+
+tiers:
+  1:
+    label: budget
+    description_ko: "저렴/빠름 — 메타데이터 추출, 간단한 작업"
+    description_en: "Budget/Fast — metadata extraction, simple tasks"
+  2:
+    label: standard
+    description_ko: "균형 — 채팅, RAG, 복잡한 추출"
+    description_en: "Standard — chat, RAG, complex extraction"
+  3:
+    label: premium
+    description_ko: "프리미엄 — 복잡한 추론, 최고 품질"
+    description_en: "Premium — complex reasoning, highest quality"
+
+providers:
+  anthropic:
+    models:
+      claude-haiku-4-5-20251001:
+        tier: 1
+        input_price: 1.00
+        output_price: 5.00
+        context_window: 200000
+      claude-sonnet-4-6:
+        tier: 2
+        input_price: 3.00
+        output_price: 15.00
+        context_window: 200000
+      claude-opus-4-6:
+        tier: 3
+        input_price: 5.00
+        output_price: 25.00
+        context_window: 200000
+
+  openai:
+    models:
+      # --- Tier 1: Budget ---
+      gpt-4.1-nano:
+        tier: 1
+        input_price: 0.10
+        output_price: 0.40
+        context_window: 1000000
+      gpt-4o-mini:
+        tier: 1
+        input_price: 0.15
+        output_price: 0.60
+        context_window: 128000
+      gpt-5-nano:
+        tier: 1
+        input_price: 0.05
+        output_price: 0.40
+        context_window: 400000
+      gpt-5-mini:
+        tier: 1
+        input_price: 0.25
+        output_price: 2.00
+        context_window: 400000
+      gpt-4.1-mini:
+        tier: 1
+        input_price: 0.40
+        output_price: 1.60
+        context_window: 1000000
+      # --- Tier 2: Standard ---
+      o4-mini:
+        tier: 2
+        input_price: 1.10
+        output_price: 4.40
+        context_window: 200000
+      gpt-4.1:
+        tier: 2
+        input_price: 2.00
+        output_price: 8.00
+        context_window: 1000000
+      o3:
+        tier: 2
+        input_price: 2.00
+        output_price: 8.00
+        context_window: 200000
+      gpt-4o:
+        tier: 2
+        input_price: 2.50
+        output_price: 10.00
+        context_window: 128000
+      gpt-5:
+        tier: 2
+        input_price: 1.25
+        output_price: 10.00
+        context_window: 400000
+
+  google:
+    models:
+      # --- Tier 1: Budget ---
+      gemini-2.0-flash:
+        tier: 1
+        input_price: 0.10
+        output_price: 0.40
+        context_window: 1000000
+      gemini-2.5-flash-lite:
+        tier: 1
+        input_price: 0.10
+        output_price: 0.40
+        context_window: 1000000
+      gemini-2.5-flash:
+        tier: 1
+        input_price: 0.15
+        output_price: 0.60
+        context_window: 1000000
+        note: "thinking mode: $0.30/$2.50"
+      gemini-3-flash-preview:
+        tier: 1
+        input_price: 0.50
+        output_price: 3.00
+        context_window: 1000000
+      # --- Tier 2: Standard ---
+      gemini-2.5-pro:
+        tier: 2
+        input_price: 1.25
+        output_price: 10.00
+        context_window: 1000000
+      gemini-3-pro-preview:
+        tier: 2
+        input_price: 2.00
+        output_price: 12.00
+        context_window: 1000000
+
+  grok:
+    models:
+      # --- Tier 1: Budget ---
+      grok-4-1-fast:
+        tier: 1
+        input_price: 0.20
+        output_price: 0.50
+        context_window: 2000000
+        note: "reasoning/non-reasoning variants available"
+      grok-3-mini:
+        tier: 1
+        input_price: 0.30
+        output_price: 0.50
+        context_window: 131072
+      # --- Tier 2: Standard ---
+      grok-3:
+        tier: 2
+        input_price: 3.00
+        output_price: 15.00
+        context_window: 131072
+      grok-4-0709:
+        tier: 2
+        input_price: 3.00
+        output_price: 15.00
+        context_window: 256000

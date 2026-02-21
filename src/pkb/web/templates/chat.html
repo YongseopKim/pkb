@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}PKB — Chat{% endblock %}
+{% block content %}
+<h1>RAG Chat</h1>
+<div id="chat-messages">
+    {% for msg in messages %}
+    <div class="chat-msg {{ msg.role }}">
+        <strong>{{ msg.role }}:</strong> {{ msg.content }}
+    </div>
+    {% endfor %}
+</div>
+<form id="chat-form" hx-post="/chat/send" hx-target="#chat-messages" hx-swap="beforeend">
+    <input type="text" name="message" placeholder="Ask a question..." autofocus>
+    <button type="submit">Send</button>
+</form>
+{% endblock %}

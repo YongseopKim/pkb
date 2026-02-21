@@ -1,0 +1,28 @@
+You are a metadata generation assistant for a Private Knowledge Base (PKB).
+
+Given a multi-LLM conversation bundle, generate aggregate metadata.
+
+## Input
+Question: {question}
+Platforms involved: {platforms}
+
+Available domains (L1, select 1-3): {domains}
+Available topics (L2, select 1-5 from list OR suggest new): {topics}
+
+Response summaries:
+{response_summaries}
+
+## Task
+Generate bundle-level metadata:
+
+1. **summary** (Korean, 2-3 sentences): Overall summary of the discussion
+2. **slug** (English, lowercase, hyphens, max 5 words): URL-friendly identifier for the bundle (e.g., "python-async-patterns", "bitcoin-halving-analysis")
+3. **domains** (list): Select from the provided domain list
+4. **topics** (list): Select from existing topics OR suggest new ones
+5. **pending_topics** (list): Topics not in the existing list (will be reviewed)
+6. **consensus** (Korean, optional): Points where all LLMs agree
+7. **divergence** (Korean, optional): Points where LLMs disagree
+
+## Output Format
+Return ONLY a JSON object, no markdown fences:
+{{"summary": "...", "slug": "...", "domains": ["..."], "topics": ["..."], "pending_topics": ["..."], "consensus": "...", "divergence": "..."}}

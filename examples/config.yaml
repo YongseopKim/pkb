@@ -1,0 +1,87 @@
+# PKB Configuration Example
+# Copy this file to ~/.pkb/config.yaml and edit to match your environment.
+#
+# API keys: use environment variables OR set api_key directly in this file.
+# Priority: env var (api_key_env) > config value (api_key) > SDK default.
+#
+# Option A — environment variables (recommended for shared machines):
+#   export ANTHROPIC_API_KEY="sk-ant-..."
+#   export OPENAI_API_KEY="sk-..."
+#   export GOOGLE_API_KEY="AI..."
+#   export XAI_API_KEY="xai-..."
+#
+# Option B — direct in config (convenient for personal ~/.pkb/):
+#   Set api_key field below for each provider.
+#
+#   export PKB_DB_PASSWORD="your-db-password"
+
+# --- Knowledge Bases ---
+# Each KB is a separate directory (typically its own git repo).
+knowledge_bases:
+  - name: personal
+    path: ~/kb-personal
+    # watch_dir: ~/kb-personal/inbox  # Optional, defaults to {path}/inbox
+
+# --- LLM Configuration (multi-provider) ---
+# This section takes priority over the legacy "meta_llm" section below.
+# Remove providers you don't use.
+llm:
+  default_provider: anthropic
+  providers:
+    anthropic:
+      api_key_env: ANTHROPIC_API_KEY     # env var name to read API key from
+      api_key: ""                        # or set key directly here
+      models:
+        - name: claude-haiku-4-5-20251001
+          tier: 1                        # tier 1 = cheap/fast
+    openai:
+      api_key_env: OPENAI_API_KEY
+      api_key: ""
+      models:
+        - name: gpt-4o-mini
+          tier: 1
+    google:
+      api_key_env: GOOGLE_API_KEY
+      api_key: ""
+      models:
+        - name: gemini-2.0-flash
+          tier: 1
+    grok:
+      api_key_env: XAI_API_KEY
+      api_key: ""
+      models:
+        - name: grok-3-mini-fast
+          tier: 1
+  routing:
+    meta_extraction: 1                   # use tier 1 models for metadata extraction
+    chat: 1                              # use tier 1 models for RAG chatbot
+    escalation: true                     # on failure, try next provider in same tier
+
+# --- Legacy LLM (single provider, used when "llm" section is absent) ---
+meta_llm:
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+  max_retries: 3
+  temperature: 0
+
+# --- Embedding / Chunking ---
+embedding:
+  chunk_size: 512
+  chunk_overlap: 50
+
+# --- Database ---
+database:
+  postgres:
+    host: localhost
+    port: 5432
+    database: pkb_db
+    username: pkb_user
+    password: ""                         # Prefer PKB_DB_PASSWORD env var
+  chromadb:
+    host: localhost
+    port: 8000
+    collection: pkb_chunks
+
+# --- Duplicate Detection ---
+dedup:
+  threshold: 0.85                        # cosine similarity threshold
