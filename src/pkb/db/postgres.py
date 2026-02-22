@@ -105,30 +105,34 @@ class BundleRepository:
                 },
             )
 
-            # Replace domains
+            # Replace domains (deduplicate)
             conn.execute(
                 "DELETE FROM bundle_domains WHERE bundle_id = %s", (bundle_id,)
             )
-            for domain in domains:
+            for domain in dict.fromkeys(domains):
                 conn.execute(
                     "INSERT INTO bundle_domains (bundle_id, domain) VALUES (%s, %s)",
                     (bundle_id, domain),
                 )
 
-            # Replace topics
+            # Replace topics (deduplicate; pending that overlap with topics are dropped)
             conn.execute(
                 "DELETE FROM bundle_topics WHERE bundle_id = %s", (bundle_id,)
             )
-            for topic in topics:
+            unique_topics = list(dict.fromkeys(topics))
+            topic_set = set(unique_topics)
+            for topic in unique_topics:
                 conn.execute(
                     "INSERT INTO bundle_topics (bundle_id, topic, is_pending) VALUES (%s, %s, %s)",
                     (bundle_id, topic, False),
                 )
-            for topic in (pending_topics or []):
-                conn.execute(
-                    "INSERT INTO bundle_topics (bundle_id, topic, is_pending) VALUES (%s, %s, %s)",
-                    (bundle_id, topic, True),
-                )
+            for topic in dict.fromkeys(pending_topics or []):
+                if topic not in topic_set:
+                    conn.execute(
+                        "INSERT INTO bundle_topics (bundle_id, topic, is_pending)"
+                        " VALUES (%s, %s, %s)",
+                        (bundle_id, topic, True),
+                    )
 
             # Replace responses
             conn.execute(
@@ -333,30 +337,34 @@ class BundleRepository:
                 {"id": bundle_id, "summary": summary},
             )
 
-            # Replace domains
+            # Replace domains (deduplicate)
             conn.execute(
                 "DELETE FROM bundle_domains WHERE bundle_id = %s", (bundle_id,)
             )
-            for domain in domains:
+            for domain in dict.fromkeys(domains):
                 conn.execute(
                     "INSERT INTO bundle_domains (bundle_id, domain) VALUES (%s, %s)",
                     (bundle_id, domain),
                 )
 
-            # Replace topics
+            # Replace topics (deduplicate; pending that overlap with topics are dropped)
             conn.execute(
                 "DELETE FROM bundle_topics WHERE bundle_id = %s", (bundle_id,)
             )
-            for topic in topics:
+            unique_topics = list(dict.fromkeys(topics))
+            topic_set = set(unique_topics)
+            for topic in unique_topics:
                 conn.execute(
                     "INSERT INTO bundle_topics (bundle_id, topic, is_pending) VALUES (%s, %s, %s)",
                     (bundle_id, topic, False),
                 )
-            for topic in (pending_topics or []):
-                conn.execute(
-                    "INSERT INTO bundle_topics (bundle_id, topic, is_pending) VALUES (%s, %s, %s)",
-                    (bundle_id, topic, True),
-                )
+            for topic in dict.fromkeys(pending_topics or []):
+                if topic not in topic_set:
+                    conn.execute(
+                        "INSERT INTO bundle_topics (bundle_id, topic, is_pending)"
+                        " VALUES (%s, %s, %s)",
+                        (bundle_id, topic, True),
+                    )
 
     def upsert_topic_vocab(
         self,

@@ -531,6 +531,112 @@ class TestAddResponseToBundle:
         assert "source_path = EXCLUDED.source_path" in insert_sql
 
 
+class TestDeduplicateTopicsAndDomains:
+    """중복 토픽/도메인이 들어올 때 UniqueViolation 없이 처리되어야 함."""
+
+    def _base_kwargs(self):
+        return dict(
+            bundle_id="20260222-test-dedup-e3b0",
+            kb="personal",
+            question="테스트 질문",
+            summary="테스트 요약",
+            created_at=datetime.now(timezone.utc),
+            response_count=1,
+            path="bundles/20260222-test-dedup-e3b0",
+            question_hash="dedup123",
+            responses=[{"platform": "claude", "model": "sonnet", "turn_count": 3}],
+        )
+
+    def test_upsert_deduplicates_topics(self, repo, mock_conn):
+        """topics 리스트에 중복이 있으면 deduplicate하여 INSERT 1회만."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            domains=["investing"],
+            topics=["ethereum", "bitcoin", "ethereum"],
+        )
+        topic_inserts = [
+            c for c in mock_conn.execute.call_args_list
+            if "bundle_topics" in str(c[0][0]) and "INSERT" in str(c[0][0]).upper()
+        ]
+        # ethereum 중복 → 2개만 INSERT
+        assert len(topic_inserts) == 2
+
+    def test_upsert_deduplicates_domains(self, repo, mock_conn):
+        """domains 리스트에 중복이 있으면 deduplicate."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            domains=["dev", "dev", "ai"],
+            topics=["python"],
+        )
+        domain_inserts = [
+            c for c in mock_conn.execute.call_args_list
+            if "bundle_domains" in str(c[0][0]) and "INSERT" in str(c[0][0]).upper()
+        ]
+        assert len(domain_inserts) == 2
+
+    def test_upsert_pending_topics_overlap_with_topics(self, repo, mock_conn):
+        """pending_topics가 topics와 겹치면 pending에서 제거."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            domains=["investing"],
+            topics=["ethereum", "bitcoin"],
+            pending_topics=["ethereum", "defi"],
+        )
+        topic_inserts = [
+            c for c in mock_conn.execute.call_args_list
+            if "bundle_topics" in str(c[0][0]) and "INSERT" in str(c[0][0]).upper()
+        ]
+        # ethereum(approved) + bitcoin(approved) + defi(pending) = 3
+        # ethereum in pending_topics는 제거됨
+        assert len(topic_inserts) == 3
+
+    def test_upsert_pending_topics_self_dedup(self, repo, mock_conn):
+        """pending_topics 리스트 자체의 중복도 제거."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            domains=["investing"],
+            topics=["bitcoin"],
+            pending_topics=["defi", "defi", "nft"],
+        )
+        topic_inserts = [
+            c for c in mock_conn.execute.call_args_list
+            if "bundle_topics" in str(c[0][0]) and "INSERT" in str(c[0][0]).upper()
+        ]
+        # bitcoin(approved) + defi(pending) + nft(pending) = 3
+        assert len(topic_inserts) == 3
+
+    def test_update_meta_deduplicates_topics(self, repo, mock_conn):
+        """update_bundle_meta에서도 중복 토픽 deduplicate."""
+        repo.update_bundle_meta(
+            bundle_id="20260222-test-dedup-e3b0",
+            summary="요약",
+            domains=["dev"],
+            topics=["python", "python", "fastapi"],
+            pending_topics=["python", "new-topic"],
+        )
+        topic_inserts = [
+            c for c in mock_conn.execute.call_args_list
+            if "bundle_topics" in str(c[0][0]) and "INSERT" in str(c[0][0]).upper()
+        ]
+        # python(approved) + fastapi(approved) + new-topic(pending) = 3
+        # python in pending_topics는 제거됨
+        assert len(topic_inserts) == 3
+
+    def test_update_meta_deduplicates_domains(self, repo, mock_conn):
+        """update_bundle_meta에서도 중복 도메인 deduplicate."""
+        repo.update_bundle_meta(
+            bundle_id="20260222-test-dedup-e3b0",
+            summary="요약",
+            domains=["dev", "dev", "ai"],
+            topics=["python"],
+        )
+        domain_inserts = [
+            c for c in mock_conn.execute.call_args_list
+            if "bundle_domains" in str(c[0][0]) and "INSERT" in str(c[0][0]).upper()
+        ]
+        assert len(domain_inserts) == 2
+
+
 class TestRenameDomain:
     def test_rename_returns_affected_count(self, repo, mock_conn):
         """도메인 이름 변경 시 영향받은 행 수를 반환."""
