@@ -138,3 +138,23 @@ class TestParseJsonlFile:
         conv = parse_jsonl_file(samples_dir / "perplexity.jsonl")
         assert conv.meta.platform == "perplexity"
         assert conv.turn_count > 0
+
+    def test_euc_kr_encoded_jsonl_file(self, tmp_path: Path):
+        """EUC-KR encoded JSONL file should parse without error."""
+        import json
+
+        meta_line = json.dumps(
+            {"_meta": True, "platform": "claude", "url": "https://claude.ai/chat/x",
+             "exported_at": "2026-02-21T06:00:00Z", "title": "테스트"},
+            ensure_ascii=False,
+        )
+        turn_line = json.dumps(
+            {"role": "user", "content": "한글 내용", "timestamp": "2026-02-21T06:00:01Z"},
+            ensure_ascii=False,
+        )
+        content = f"{meta_line}\n{turn_line}\n"
+        jsonl_file = tmp_path / "test.jsonl"
+        jsonl_file.write_bytes(content.encode("euc-kr"))
+        conv = parse_jsonl_file(jsonl_file)
+        assert conv.meta.platform == "claude"
+        assert len(conv.turns) == 1

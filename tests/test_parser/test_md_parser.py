@@ -329,6 +329,38 @@ class TestParseMdFile:
         # Should use file mtime, not "now"
         assert conv.meta.exported_at is not None
 
+    def test_euc_kr_encoded_file(self, tmp_path: Path):
+        """EUC-KR (Korean legacy) encoded file should parse without error."""
+        korean_text = "## 트레바리 넥스랩\n\n한글 내용입니다.\n"
+        md_file = tmp_path / "evernote_note.md"
+        md_file.write_bytes(korean_text.encode("euc-kr"))
+        conv = parse_md_file(md_file)
+        assert len(conv.turns) >= 1
+        assert "한글" in conv.turns[0].content
+
+    def test_cp949_encoded_file(self, tmp_path: Path):
+        """CP949 (Windows Korean) encoded file should parse without error."""
+        korean_text = "# 박진영 노트\n\n내용입니다.\n"
+        md_file = tmp_path / "note.md"
+        md_file.write_bytes(korean_text.encode("cp949"))
+        conv = parse_md_file(md_file)
+        assert len(conv.turns) >= 1
+
+    def test_latin1_encoded_file(self, tmp_path: Path):
+        """Latin-1 encoded file should parse without error."""
+        text = "## Café résumé\n\nContent with accents.\n"
+        md_file = tmp_path / "note.md"
+        md_file.write_bytes(text.encode("latin-1"))
+        conv = parse_md_file(md_file)
+        assert len(conv.turns) >= 1
+
+    def test_utf8_bom_still_works(self, tmp_path: Path):
+        """UTF-8 with BOM should still work (regression check)."""
+        md_file = tmp_path / "bom.md"
+        md_file.write_bytes(b"\xef\xbb\xbf## BOM Content\n\nTest\n")
+        conv = parse_md_file(md_file)
+        assert len(conv.turns) >= 1
+
 
 # ── Real sample files ────────────────────────────────────────────────
 

@@ -39,7 +39,9 @@ def parse_jsonl_file(path: Path) -> Conversation:
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
-    data = path.read_text(encoding="utf-8-sig")
+    from pkb.parser import read_text_with_fallback
+
+    data = read_text_with_fallback(path)
     return parse_jsonl_string(data)
 
 

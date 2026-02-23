@@ -145,7 +145,9 @@ def parse_md_file(
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
-    data = path.read_text(encoding="utf-8-sig")
+    from pkb.parser import read_text_with_fallback
+
+    data = read_text_with_fallback(path)
 
     # If no explicit platform param, try filename
     if platform is None:
