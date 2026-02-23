@@ -80,5 +80,18 @@ class MetaGenerator:
 
         try:
             return json.loads(text)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse JSON from LLM response: {e}\nRaw: {text}")
+        except json.JSONDecodeError:
+            text = self._normalize_invalid_escapes(text)
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Failed to parse JSON from LLM response: {e}\nRaw: {text}"
+                )
+
+    _INVALID_ESCAPE_RE = re.compile(r'\\([^"\\/bfnrtu])')
+
+    @staticmethod
+    def _normalize_invalid_escapes(text: str) -> str:
+        """Remove backslash from invalid JSON escape sequences (e.g. \\$ → $)."""
+        return MetaGenerator._INVALID_ESCAPE_RE.sub(r'\1', text)

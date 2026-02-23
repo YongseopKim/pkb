@@ -14,8 +14,17 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYPROJECT="$REPO_ROOT/pyproject.toml"
 DIST_DIR="$REPO_ROOT/dist"
 
+# ── Resolve Python (prefer .venv) ────────────────────────
+VENV_PYTHON="$REPO_ROOT/.venv/bin/python"
+if [ -x "$VENV_PYTHON" ]; then
+    PYTHON="$VENV_PYTHON"
+else
+    PYTHON="python3"
+    echo "Warning: .venv not found, falling back to system python3"
+fi
+
 # ── Read current version ──────────────────────────────────
-current_version=$(python3 -c "
+current_version=$($PYTHON -c "
 import re, pathlib
 text = pathlib.Path('$PYPROJECT').read_text()
 m = re.search(r'^version\s*=\s*\"([^\"]+)\"', text, re.MULTILINE)
@@ -28,7 +37,7 @@ echo "Current version: $current_version"
 BUMP="${1:-}"
 
 if [ -n "$BUMP" ]; then
-    new_version=$(python3 -c "
+    new_version=$($PYTHON -c "
 import sys
 parts = '$current_version'.split('.')
 if len(parts) != 3:
@@ -51,7 +60,7 @@ print(f'{major}.{minor}.{patch}')
     echo "Bumping: $current_version → $new_version"
 
     # Update pyproject.toml
-    python3 -c "
+    $PYTHON -c "
 import pathlib, re
 p = pathlib.Path('$PYPROJECT')
 text = p.read_text()
@@ -79,7 +88,7 @@ fi
 # ── Build ─────────────────────────────────────────────────
 echo ""
 echo "Building pkb $new_version ..."
-python3 -m build "$REPO_ROOT" --outdir "$DIST_DIR"
+$PYTHON -m build "$REPO_ROOT" --outdir "$DIST_DIR"
 
 # ── Summary ───────────────────────────────────────────────
 echo ""

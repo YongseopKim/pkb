@@ -44,6 +44,41 @@ class TestParseJsonResponse:
         with pytest.raises(ValueError):
             gen._parse_json_response("not json at all")
 
+    def test_invalid_escape_backslash_dollar(self, gen):
+        r"""LLM이 LaTeX 스타일 \$를 사용한 경우 정상 파싱."""
+        text = r'{"summary": "주가 \$356 분석", "key_claims": [], "stance": "neutral"}'
+        result = gen._parse_json_response(text)
+        assert result["summary"] == "주가 $356 분석"
+
+    def test_invalid_escape_multiple_types(self, gen):
+        r"""여러 종류의 invalid escape가 섞인 경우."""
+        text = r'{"summary": "가격 \$100 \& 수수료 \#5", "key_claims": [], "stance": "neutral"}'
+        result = gen._parse_json_response(text)
+        assert result["summary"] == "가격 $100 & 수수료 #5"
+
+    def test_valid_escapes_preserved(self, gen):
+        """유효한 JSON escape는 보존."""
+        text = '{"summary": "line1\\nline2\\ttab", "key_claims": [], "stance": "neutral"}'
+        result = gen._parse_json_response(text)
+        assert result["summary"] == "line1\nline2\ttab"
+
+    def test_invalid_escape_in_markdown_fence(self, gen):
+        r"""마크다운 fence 안의 invalid escape도 정리."""
+        text = '```json\n{"summary": "\\$500 투자"}\n```'
+        result = gen._parse_json_response(text)
+        assert result["summary"] == "$500 투자"
+
+    def test_real_world_tesla_case(self, gen):
+        r"""실제 발생한 테슬라 주가 분석 케이스 재현."""
+        text = (
+            r'{"summary":"테슬라 현재 주가 \$356이 합리적이려면",'
+            r'"key_claims":["목표주가는 \$356→\$691.5"],'
+            r'"stance":"informative","model":"unknown"}'
+        )
+        result = gen._parse_json_response(text)
+        assert "$356" in result["summary"]
+        assert "$691.5" in result["key_claims"][0]
+
 
 class TestGenerateResponseMeta:
     def test_returns_response_meta(self, gen, mock_router):

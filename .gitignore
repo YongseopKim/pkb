@@ -46,3 +46,4 @@ Thumbs.db
 .worktrees/
 .config.yaml
 .playwright-mcp
+.example/
