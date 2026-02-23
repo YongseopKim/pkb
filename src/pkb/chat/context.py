@@ -17,6 +17,7 @@ def assemble_context(
     search_results: list[BundleSearchResult],
     history: list[ChatMessage],
     max_results: int = 5,
+    mode: str = "explorer",
 ) -> str:
     """Assemble an LLM prompt from search results and conversation history.
 
@@ -25,7 +26,7 @@ def assemble_context(
     - Search results: ~3000 (top 5 bundles)
     - History: ~2000 (sliding window)
     """
-    system_prompt = _load_system_prompt()
+    system_prompt = _load_system_prompt(mode)
 
     # Build context from search results
     context_parts = []
@@ -59,10 +60,11 @@ def assemble_context(
     return prompt
 
 
-def _load_system_prompt() -> str:
-    """Load the chat system prompt."""
+def _load_system_prompt(mode: str = "explorer") -> str:
+    """Load the chat system prompt for the given mode."""
+    prompt_name = "chat_system" if mode == "explorer" else f"chat_{mode}"
     try:
-        return load_prompt("chat_system")
+        return load_prompt(prompt_name)
     except FileNotFoundError:
         return (
             "당신은 PKB(Private Knowledge Base)의 RAG 챗봇입니다. "

@@ -17,6 +17,8 @@ Analyze the response and extract:
 3. **stance** (English, one word): The response's overall stance/tone (e.g., informative, cautious, optimistic, critical, neutral)
 4. **model** (English, if identifiable): The LLM model name if mentioned or identifiable
 
+CRITICAL: You MUST return ONLY a valid JSON object. Never ask clarifying questions, never explain, never refuse. If the input seems incomplete, generate your best estimate based on available information.
+
 ## Output Format
 Return ONLY a JSON object, no markdown fences:
 {{"summary": "...", "key_claims": ["...", "..."], "stance": "...", "model": "..."}}

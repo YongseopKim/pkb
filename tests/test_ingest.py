@@ -17,6 +17,24 @@ from pkb.ingest import (
     move_to_done,
 )
 
+# Reusable test assistant content (>= 50 chars each)
+_ASYNC_ANSWER = (
+    "async는 Python 비동기 프로그래밍 핵심 키워드입니다. "
+    "asyncio 라이브러리와 함께 사용합니다."
+)
+_GENERIC_ANSWER = (
+    "답변입니다. 이것은 테스트를 위한 충분히 긴 "
+    "응답 내용입니다. 최소 50자 이상이어야 합니다."
+)
+_CHATGPT_ANSWER = (
+    "ChatGPT의 답변입니다. async/await는 비동기 "
+    "프로그래밍의 핵심 패턴으로 유용합니다."
+)
+_NEW_ANSWER = (
+    "새 답변입니다. 이것은 새로운 질문에 대한 "
+    "충분히 긴 응답으로 50자 이상의 컨텐츠입니다."
+)
+
 
 class TestMoveToDone:
     """Tests for move_to_done() inbox cleanup function."""
@@ -363,7 +381,7 @@ class TestIngestPipeline:
             }),
             json.dumps({
                 "role": "assistant",
-                "content": "async는 비동기 키워드입니다.",
+                "content": _ASYNC_ANSWER,
                 "timestamp": "2026-02-21T06:00:02.000Z",
             }),
         ]
@@ -523,7 +541,7 @@ class TestBundleMdNoQuestion:
                          "title": "테스트"}),
             json.dumps({"role": "user", "content": "질문입니다",
                          "timestamp": "2026-02-21T06:00:01.000Z"}),
-            json.dumps({"role": "assistant", "content": "답변입니다",
+            json.dumps({"role": "assistant", "content": _GENERIC_ANSWER,
                          "timestamp": "2026-02-21T06:00:02.000Z"}),
         ]
         p = tmp_path / "test.jsonl"
@@ -589,7 +607,7 @@ class TestOrphanDirectoryPrevention:
                          "exported_at": "2026-02-21T06:00:00.000Z", "title": "테스트"}),
             json.dumps({"role": "user", "content": "질문?",
                          "timestamp": "2026-02-21T06:00:01.000Z"}),
-            json.dumps({"role": "assistant", "content": "답변",
+            json.dumps({"role": "assistant", "content": _GENERIC_ANSWER,
                          "timestamp": "2026-02-21T06:00:02.000Z"}),
         ]
         jsonl_path.write_text("\n".join(lines), encoding="utf-8")
@@ -728,7 +746,7 @@ class TestMergeFile:
                 "timestamp": "2026-02-21T06:00:01.000Z",
             }),
             json.dumps({
-                "role": "assistant", "content": "async는 비동기 키워드입니다.",
+                "role": "assistant", "content": _ASYNC_ANSWER,
                 "timestamp": "2026-02-21T06:00:02.000Z",
             }),
         ]
@@ -763,7 +781,7 @@ class TestMergeFile:
             }),
             json.dumps({
                 "role": "assistant",
-                "content": "Python async는 비동기 프로그래밍을 위한 키워드입니다.",
+                "content": _ASYNC_ANSWER,
                 "timestamp": "2026-02-21T07:00:02.000Z",
             }),
         ]
@@ -807,7 +825,7 @@ class TestMergeFile:
                 "timestamp": "2026-02-21T08:00:01.000Z",
             }),
             json.dumps({
-                "role": "assistant", "content": "async 설명",
+                "role": "assistant", "content": _ASYNC_ANSWER,
                 "timestamp": "2026-02-21T08:00:02.000Z",
             }),
         ]
@@ -908,7 +926,7 @@ class TestMergeFile:
                 "timestamp": "2026-02-21T06:00:01.000Z",
             }),
             json.dumps({
-                "role": "assistant", "content": "새 답변",
+                "role": "assistant", "content": _NEW_ANSWER,
                 "timestamp": "2026-02-21T06:00:02.000Z",
             }),
         ]
@@ -966,7 +984,7 @@ class TestMergeFilePartialFailure:
                          "exported_at": "2026-02-21T06:00:00.000Z", "title": "테스트"}),
             json.dumps({"role": "user", "content": "질문?",
                          "timestamp": "2026-02-21T06:00:01.000Z"}),
-            json.dumps({"role": "assistant", "content": "답변",
+            json.dumps({"role": "assistant", "content": _GENERIC_ANSWER,
                          "timestamp": "2026-02-21T06:00:02.000Z"}),
         ]
         (raw_dir / "claude.jsonl").write_text("\n".join(claude_lines), encoding="utf-8")
@@ -986,7 +1004,7 @@ class TestMergeFilePartialFailure:
                          "exported_at": "2026-02-21T07:00:00.000Z", "title": "테스트"}),
             json.dumps({"role": "user", "content": "질문?",
                          "timestamp": "2026-02-21T07:00:01.000Z"}),
-            json.dumps({"role": "assistant", "content": "ChatGPT 답변",
+            json.dumps({"role": "assistant", "content": _CHATGPT_ANSWER,
                          "timestamp": "2026-02-21T07:00:02.000Z"}),
         ]
         jsonl_path.write_text("\n".join(lines), encoding="utf-8")
@@ -1089,7 +1107,7 @@ class TestConcurrentDedup:
                          "exported_at": "2026-02-21T06:00:00.000Z", "title": "테스트"}),
             json.dumps({"role": "user", "content": user_content,
                          "timestamp": "2026-02-21T06:00:01.000Z"}),
-            json.dumps({"role": "assistant", "content": "답변",
+            json.dumps({"role": "assistant", "content": _GENERIC_ANSWER,
                          "timestamp": "2026-02-21T06:00:02.000Z"}),
         ]
         path.write_text("\n".join(lines), encoding="utf-8")
@@ -1165,3 +1183,153 @@ class TestConcurrentDedup:
         assert result is not None
         # No hash lock should have been created for force mode
         assert len(pipeline._hash_locks) == 0
+
+
+class TestIngestContentValidation:
+    def test_skip_when_no_turns(self, tmp_path):
+        """turns가 비어있으면 skip."""
+        repo = MagicMock()
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+
+        pipeline = IngestPipeline(
+            repo=repo, chunk_store=chunk_store, meta_gen=meta_gen,
+            kb_path=tmp_path, kb_name="test", domains=[], topics=[],
+        )
+
+        # MD with only a header, no meaningful content turns
+        md_file = tmp_path / "chatgpt.md"
+        md_file.write_text("# [ChatGPT](https://chatgpt.com/chat/abc)")
+
+        result = pipeline.ingest_file(md_file)
+        assert result is not None
+        assert result["status"] == "skip_insufficient_content"
+
+    def test_skip_when_content_too_short(self, tmp_path):
+        """assistant 콘텐츠가 50자 미만이면 skip."""
+        repo = MagicMock()
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+
+        pipeline = IngestPipeline(
+            repo=repo, chunk_store=chunk_store, meta_gen=meta_gen,
+            kb_path=tmp_path, kb_name="test", domains=[], topics=[],
+        )
+
+        md_file = tmp_path / "chatgpt.md"
+        md_file.write_text(
+            "# [ChatGPT](https://chatgpt.com/c/abc)\n\n## LLM 응답 1\n\nShort."
+        )
+
+        result = pipeline.ingest_file(md_file)
+        assert result is not None
+        assert result["status"] == "skip_insufficient_content"
+
+    def test_accepts_sufficient_content(self, tmp_path):
+        """50자 이상이면 정상 처리 진행 (meta_gen 호출)."""
+        repo = MagicMock()
+        repo.find_bundle_by_question_hash.return_value = None
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+        meta_gen.generate_bundle_meta.return_value = MagicMock(
+            slug="test-slug", summary="테스트", domains=["dev"], topics=["python"],
+            pending_topics=[], consensus=None, divergence=None,
+            model_dump=lambda: {
+                "slug": "test-slug", "summary": "테스트", "domains": ["dev"],
+                "topics": ["python"], "pending_topics": [],
+                "consensus": None, "divergence": None,
+            },
+        )
+        meta_gen.generate_response_meta.return_value = MagicMock(
+            model="gpt-4",
+            model_dump=lambda: {
+                "summary": "t", "key_claims": [], "stance": "neutral", "model": "gpt-4",
+            },
+        )
+
+        pipeline = IngestPipeline(
+            repo=repo, chunk_store=chunk_store, meta_gen=meta_gen,
+            kb_path=tmp_path, kb_name="test", domains=["dev"], topics=["python"],
+        )
+
+        content = "A" * 60  # 60 chars, above threshold
+        md_file = tmp_path / "chatgpt.md"
+        md_file.write_text(
+            f"# [ChatGPT](https://chatgpt.com/c/abc)\n\n## LLM 응답 1\n\n{content}"
+        )
+
+        result = pipeline.ingest_file(md_file)
+        assert result is not None
+        assert result.get("status") != "skip_insufficient_content"
+        meta_gen.generate_bundle_meta.assert_called_once()
+
+
+class TestIngestResponseSummaryValidation:
+    def test_skip_when_response_summaries_too_short(self, tmp_path):
+        """response_summaries가 50자 미만이면 skip (LLM 호출 방지)."""
+        from unittest.mock import patch
+
+        repo = MagicMock()
+        repo.find_bundle_by_question_hash.return_value = None
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+
+        pipeline = IngestPipeline(
+            repo=repo, chunk_store=chunk_store, meta_gen=meta_gen,
+            kb_path=tmp_path, kb_name="test", domains=["dev"], topics=[],
+        )
+
+        # Create a valid MD file with enough content to pass content validation
+        md_file = tmp_path / "chatgpt.md"
+        md_file.write_text(
+            "# [ChatGPT](https://chatgpt.com/c/abc)\n\n## LLM 응답 1\n\n" + "x" * 60
+        )
+
+        # Mock _build_response_summaries to return a short string
+        # (simulates scenario where summary building strips content)
+        with patch.object(pipeline, "_build_response_summaries", return_value="short"):
+            result = pipeline.ingest_file(md_file)
+
+        assert result is not None
+        assert result["status"] == "skip_insufficient_content"
+        # meta_gen should NOT have been called
+        meta_gen.generate_bundle_meta.assert_not_called()
+
+
+class TestIngestGracefulSkip:
+    def test_parse_error_returns_skip_dict(self, tmp_path):
+        """ParseError 발생 시 에러 대신 skip dict 반환."""
+        repo = MagicMock()
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+
+        pipeline = IngestPipeline(
+            repo=repo, chunk_store=chunk_store, meta_gen=meta_gen,
+            kb_path=tmp_path, kb_name="test", domains=[], topics=[],
+        )
+
+        # Create empty .md file
+        md_file = tmp_path / "empty.md"
+        md_file.write_text("")
+
+        result = pipeline.ingest_file(md_file)
+        assert result is not None
+        assert result["status"] == "skip_parse_error"
+
+    def test_parse_error_does_not_raise(self, tmp_path):
+        """ParseError가 exception으로 전파되지 않음."""
+        repo = MagicMock()
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+
+        pipeline = IngestPipeline(
+            repo=repo, chunk_store=chunk_store, meta_gen=meta_gen,
+            kb_path=tmp_path, kb_name="test", domains=[], topics=[],
+        )
+
+        md_file = tmp_path / "bad.md"
+        md_file.write_text("   \n  \n  ")
+
+        # Should not raise
+        result = pipeline.ingest_file(md_file)
+        assert result["status"] == "skip_parse_error"

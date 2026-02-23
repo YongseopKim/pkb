@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections import defaultdict
 from typing import TYPE_CHECKING
@@ -11,6 +12,8 @@ from pkb.models.config import LLMConfig, MetaLLMConfig
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger(__name__)
 
 
 class LLMRouter:
@@ -118,6 +121,7 @@ class LLMRouter:
         Empty/None/whitespace responses are treated as errors and trigger retry/escalation.
         """
         start_tier = getattr(self._routing, task, 1)
+        logger.debug("LLM routing: task=%s, tier=%d", task, start_tier)
 
         if self._escalation:
             tiers_to_try = sorted(t for t in self._tier_map if t >= start_tier)
@@ -135,9 +139,14 @@ class LLMRouter:
                         )
                         if not result or not result.strip():
                             raise ValueError(f"Empty response from {_name}")
+                        logger.info(
+                            "LLM complete: provider=%s, %d chars response",
+                            _name, len(result),
+                        )
                         return result
                     except Exception as e:
                         last_error = e
+                        logger.warning("LLM error: provider=%s, %s", _name, e)
                         if not self._escalation:
                             raise
                         continue

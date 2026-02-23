@@ -85,6 +85,20 @@ class DedupConfig(BaseModel):
     threshold: float = 0.85
 
 
+class RelationConfig(BaseModel):
+    """Configuration for knowledge graph relation detection."""
+
+    similarity_threshold: float = 0.7
+    max_relations_per_bundle: int = 20
+
+
+class DigestConfig(BaseModel):
+    """Configuration for Smart Digest generation."""
+
+    max_bundles: int = 20
+    max_tokens: int = 4096
+
+
 class ConcurrencyConfig(BaseModel):
     """Configuration for concurrent ingest engine."""
 
@@ -143,5 +157,7 @@ class PKBConfig(BaseModel):
     embedding: EmbeddingConfig = EmbeddingConfig()
     database: DatabaseConfig = DatabaseConfig()
     dedup: DedupConfig = DedupConfig()
+    relations: RelationConfig = RelationConfig()
+    digest: DigestConfig = DigestConfig()
     concurrency: ConcurrencyConfig = ConcurrencyConfig()
     llm: LLMConfig | None = None

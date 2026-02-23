@@ -834,6 +834,40 @@ sequenceDiagram
 | 4.3 | 로컬 웹 UI (FastAPI + htmx + Jinja2) | ✅ |
 | 4.4 | RAG 챗봇 (ChatEngine + CLI REPL + 웹 UI) | ✅ |
 
+### Phase 5: 지식 그래프 ✅ 완료
+
+> bundle_relations 테이블, RelationBuilder (similar/related/sequel edges), pkb relate CLI, 관계 웹 UI (D3.js 그래프 API). 828 tests.
+
+| # | 액션 아이템 | 상태 |
+|---|-----------|------|
+| 5.1 | bundle_relations 테이블 + Alembic migration 0004 | ✅ |
+| 5.2 | RelationBuilder (임베딩 유사도 + 메타데이터 기반 관계 탐지) | ✅ |
+| 5.3 | pkb relate CLI (scan, list, show) | ✅ |
+| 5.4 | 관계 웹 UI (목록, 상세, 그래프 API) | ✅ |
+
+### Phase 6: 스마트 어시스턴트 ✅ 완료
+
+> DigestEngine (토픽/도메인 지식 요약), 대화 모드 (explorer/analyst/writer), MCP 서버 (pkb mcp-serve), 다이제스트 웹 UI. 854 tests.
+
+| # | 액션 아이템 | 상태 |
+|---|-----------|------|
+| 6.1 | DigestEngine (토픽/도메인 기반 지식 종합 요약) | ✅ |
+| 6.2 | 대화 모드 (explorer/analyst/writer 시스템 프롬프트 분리) | ✅ |
+| 6.3 | MCP 서버 (FastMCP, pkb_search/pkb_digest/pkb_related/pkb_stats) | ✅ |
+| 6.4 | 다이제스트 웹 UI (/digest GET+POST) | ✅ |
+
+### Phase 7: 분석 대시보드 ✅ 완료
+
+> AnalyticsEngine (통계 집계), ReportGenerator (주간/월간 마크다운 리포트), pkb stats/report CLI, Chart.js 웹 대시보드, pkb doctor 시스템 진단. 910 tests.
+
+| # | 액션 아이템 | 상태 |
+|---|-----------|------|
+| 7.1 | AnalyticsEngine (도메인/토픽/플랫폼/시간 분포, 지식 갭) | ✅ |
+| 7.2 | ReportGenerator (주간/월간 마크다운 활동 리포트) | ✅ |
+| 7.3 | pkb stats / pkb report CLI | ✅ |
+| 7.4 | 웹 대시보드 (/analytics, Chart.js, 5 JSON API endpoints) | ✅ |
+| 7.5 | pkb doctor (시스템 진단: DB, ChromaDB, LLM API 상태) | ✅ |
+
 ---
 
 ## 9. 리스크 & 완화

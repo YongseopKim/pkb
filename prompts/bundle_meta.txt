@@ -23,6 +23,8 @@ Generate bundle-level metadata:
 6. **consensus** (Korean, optional): Points where all LLMs agree
 7. **divergence** (Korean, optional): Points where LLMs disagree
 
+CRITICAL: You MUST return ONLY a valid JSON object. Never ask clarifying questions, never explain, never refuse. If the input seems incomplete, generate your best estimate based on available information.
+
 ## Output Format
 Return ONLY a JSON object, no markdown fences:
 {{"summary": "...", "slug": "...", "domains": ["..."], "topics": ["..."], "pending_topics": ["..."], "consensus": "...", "divergence": "..."}}

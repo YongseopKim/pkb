@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}PKB — Analytics{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+{% endblock %}
+{% block content %}
+<h1>Analytics Dashboard</h1>
+
+<div class="stats">
+    <div class="stat-card">
+        <h2>{{ overview.total_bundles }}</h2>
+        <p>Total Bundles</p>
+    </div>
+    <div class="stat-card">
+        <h2>{{ overview.total_relations }}</h2>
+        <p>Relations</p>
+    </div>
+    <div class="stat-card">
+        <h2>{{ overview.domain_count }}</h2>
+        <p>Domains</p>
+    </div>
+    <div class="stat-card">
+        <h2>{{ overview.topic_count }}</h2>
+        <p>Topics</p>
+    </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:2rem">
+    <div>
+        <h3>Domain Distribution</h3>
+        <canvas id="domainChart"></canvas>
+    </div>
+    <div>
+        <h3>Platform Distribution</h3>
+        <canvas id="platformChart"></canvas>
+    </div>
+    <div>
+        <h3>Monthly Trend</h3>
+        <canvas id="trendChart"></canvas>
+    </div>
+    <div>
+        <h3>Top Topics</h3>
+        <canvas id="topicChart"></canvas>
+    </div>
+</div>
+
+<div style="margin-top:2rem">
+    <h3>Knowledge Gaps</h3>
+    <div id="gaps-list"><em>Loading...</em></div>
+</div>
+
+<script>
+const COLORS = ['#4dc9f6','#f67019','#f53794','#537bc4','#acc236','#166a8f','#00a950','#58595b'];
+
+async function loadCharts() {
+    const [domains, platforms, trend, topics, gaps] = await Promise.all([
+        fetch('/analytics/api/domains').then(r => r.json()),
+        fetch('/analytics/api/platforms').then(r => r.json()),
+        fetch('/analytics/api/trend').then(r => r.json()),
+        fetch('/analytics/api/topics').then(r => r.json()),
+        fetch('/analytics/api/gaps').then(r => r.json()),
+    ]);
+
+    new Chart(document.getElementById('domainChart'), {
+        type: 'doughnut',
+        data: {
+            labels: domains.map(d => d.domain),
+            datasets: [{data: domains.map(d => d.count), backgroundColor: COLORS}]
+        }
+    });
+
+    new Chart(document.getElementById('platformChart'), {
+        type: 'bar',
+        data: {
+            labels: platforms.map(p => p.platform),
+            datasets: [{label:'Responses',data: platforms.map(p => p.count), backgroundColor: COLORS}]
+        }
+    });
+
+    new Chart(document.getElementById('trendChart'), {
+        type: 'line',
+        data: {
+            labels: trend.map(t => t.month),
+            datasets: [{label:'Bundles',data: trend.map(t => t.count), borderColor:'#4dc9f6',fill:false}]
+        }
+    });
+
+    new Chart(document.getElementById('topicChart'), {
+        type: 'bar',
+        data: {
+            labels: topics.map(t => t.topic),
+            datasets: [{label:'Bundles',data: topics.map(t => t.count), backgroundColor: COLORS}]
+        },
+        options: {indexAxis: 'y'}
+    });
+
+    const gapsList = document.getElementById('gaps-list');
+    gapsList.textContent = '';
+    if (gaps.length === 0) {
+        const p = document.createElement('p');
+        p.textContent = 'No knowledge gaps detected.';
+        gapsList.appendChild(p);
+    } else {
+        const ul = document.createElement('ul');
+        gaps.forEach(g => {
+            const li = document.createElement('li');
+            const strong = document.createElement('strong');
+            strong.textContent = g.topic;
+            li.appendChild(strong);
+            li.appendChild(document.createTextNode(': ' + g.count + ' bundles'));
+            ul.appendChild(li);
+        });
+        gapsList.appendChild(ul);
+    }
+}
+loadCharts();
+</script>
+{% endblock %}

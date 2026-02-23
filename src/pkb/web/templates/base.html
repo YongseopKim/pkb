@@ -6,6 +6,7 @@
     <title>{% block title %}PKB{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    {% block head %}{% endblock %}
 </head>
 <body>
     <nav class="navbar">
@@ -15,6 +16,9 @@
             <a href="/search">Search</a>
             <a href="/topics">Topics</a>
             <a href="/duplicates">Duplicates</a>
+            <a href="/relations">Relations</a>
+            <a href="/digest">Digest</a>
+            <a href="/analytics">Analytics</a>
             <a href="/chat">Chat</a>
             <a href="/settings">Settings</a>
         </div>

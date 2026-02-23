@@ -19,6 +19,7 @@ TABLE_NAMES = frozenset({
     "topic_vocab",
     "bundle_responses",
     "duplicate_pairs",
+    "bundle_relations",
 })
 
 CREATE_TABLES_SQL = """
@@ -91,6 +92,20 @@ CREATE TABLE IF NOT EXISTS duplicate_pairs (
     UNIQUE(bundle_a, bundle_b)
 );
 
+-- Bundle relations (knowledge graph edges)
+CREATE TABLE IF NOT EXISTS bundle_relations (
+    id SERIAL PRIMARY KEY,
+    source_bundle_id TEXT NOT NULL REFERENCES bundles(id) ON DELETE CASCADE,
+    target_bundle_id TEXT NOT NULL REFERENCES bundles(id) ON DELETE CASCADE,
+    relation_type TEXT NOT NULL,
+    score REAL NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(source_bundle_id, target_bundle_id, relation_type)
+);
+CREATE INDEX IF NOT EXISTS idx_relations_source ON bundle_relations (source_bundle_id);
+CREATE INDEX IF NOT EXISTS idx_relations_target ON bundle_relations (target_bundle_id);
+CREATE INDEX IF NOT EXISTS idx_relations_type ON bundle_relations (relation_type);
+
 -- Trigger to auto-update tsvector on insert/update
 CREATE OR REPLACE FUNCTION bundles_tsv_trigger() RETURNS trigger AS $$
 BEGIN
@@ -107,6 +122,7 @@ CREATE TRIGGER trg_bundles_tsv
 """
 
 DROP_TABLES_SQL = """
+DROP TABLE IF EXISTS bundle_relations CASCADE;
 DROP TABLE IF EXISTS duplicate_pairs CASCADE;
 DROP TABLE IF EXISTS bundle_responses CASCADE;
 DROP TABLE IF EXISTS bundle_topics CASCADE;

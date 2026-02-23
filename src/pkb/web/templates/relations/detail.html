@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}PKB — Relations: {{ bundle_id }}{% endblock %}
+{% block content %}
+<h1>Relations for {{ bundle_id }}</h1>
+{% if bundle %}
+<p><a href="/bundles/{{ bundle_id }}">View bundle</a></p>
+{% endif %}
+{% if relations %}
+<table>
+    <thead>
+        <tr>
+            <th>Related Bundle</th>
+            <th>Type</th>
+            <th>Score</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in relations %}
+        <tr>
+            {% if r.source_bundle_id == bundle_id %}
+            <td><a href="/relations/{{ r.target_bundle_id }}">{{ r.target_bundle_id }}</a></td>
+            {% else %}
+            <td><a href="/relations/{{ r.source_bundle_id }}">{{ r.source_bundle_id }}</a></td>
+            {% endif %}
+            <td>{{ r.relation_type }}</td>
+            <td>{{ "%.2f"|format(r.score) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No relations found for this bundle.</p>
+{% endif %}
+{% endblock %}

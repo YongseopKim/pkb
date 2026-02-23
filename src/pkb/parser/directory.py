@@ -20,12 +20,16 @@ def find_jsonl_files(directory: Path) -> list[Path]:
 
 def find_input_files(directory: Path) -> list[Path]:
     """Find all supported input files (.jsonl, .md) in a directory (non-recursive)."""
+    from pkb.constants import SKIP_FILENAMES
+
     directory = Path(directory)
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
     files = []
     for ext in sorted(SUPPORTED_EXTENSIONS):
-        files.extend(directory.glob(f"*{ext}"))
+        for f in directory.glob(f"*{ext}"):
+            if f.name.lower() not in SKIP_FILENAMES:
+                files.append(f)
     return sorted(files)
 
 
@@ -34,7 +38,7 @@ def find_input_files_recursive(directory: Path) -> list[Path]:
 
     Used by batch processing and watch initial scan.
     """
-    from pkb.constants import DONE_DIR_NAME
+    from pkb.constants import DONE_DIR_NAME, SKIP_FILENAMES
 
     directory = Path(directory)
     if not directory.exists():
@@ -43,7 +47,8 @@ def find_input_files_recursive(directory: Path) -> list[Path]:
     for ext in sorted(SUPPORTED_EXTENSIONS):
         for f in directory.rglob(f"*{ext}"):
             if DONE_DIR_NAME not in f.relative_to(directory).parts:
-                files.append(f)
+                if f.name.lower() not in SKIP_FILENAMES:
+                    files.append(f)
     return sorted(files)
 
 

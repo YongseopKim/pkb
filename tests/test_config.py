@@ -15,6 +15,7 @@ from pkb.models.config import (
     LLMRoutingConfig,
     MetaLLMConfig,
     PKBConfig,
+    RelationConfig,
 )
 
 
@@ -164,6 +165,37 @@ class TestAppStateChatEngine:
             search_engine=MagicMock(),
         )
         assert state.chat_engine is None
+
+
+class TestRelationConfig:
+    def test_defaults(self):
+        config = RelationConfig()
+        assert config.similarity_threshold == 0.7
+        assert config.max_relations_per_bundle == 20
+
+    def test_custom_values(self):
+        config = RelationConfig(similarity_threshold=0.8, max_relations_per_bundle=10)
+        assert config.similarity_threshold == 0.8
+        assert config.max_relations_per_bundle == 10
+
+    def test_pkbconfig_includes_relations(self):
+        config = PKBConfig()
+        assert hasattr(config, "relations")
+        assert config.relations.similarity_threshold == 0.7
+
+
+class TestDigestConfig:
+    def test_defaults(self):
+        from pkb.models.config import DigestConfig
+
+        config = DigestConfig()
+        assert config.max_bundles == 20
+        assert config.max_tokens == 4096
+
+    def test_pkbconfig_includes_digest(self):
+        config = PKBConfig()
+        assert hasattr(config, "digest")
+        assert config.digest.max_bundles == 20
 
 
 class TestLoadConfig:

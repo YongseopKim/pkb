@@ -131,6 +131,46 @@ class TestGenerateBundleMeta:
         assert "dev" in result.domains
 
 
+class TestJsonRetry:
+    def test_retry_on_non_json_response(self, mock_router):
+        """JSON 아닌 응답 시 재시도 프롬프트로 복구."""
+        config = MetaLLMConfig()
+        gen = MetaGenerator(config, router=mock_router)
+
+        # First call returns non-JSON, second returns valid JSON
+        mock_router.complete.side_effect = [
+            "I need more information to generate metadata.",
+            '{"summary": "복구됨", "key_claims": [], "stance": "neutral", "model": "gpt-4"}',
+        ]
+
+        result = gen.generate_response_meta(platform="chatgpt", content="test content " * 20)
+        assert result.summary == "복구됨"
+        assert mock_router.complete.call_count == 2
+
+    def test_retry_exhausted_raises(self, mock_router):
+        """재시도도 실패하면 ValueError."""
+        config = MetaLLMConfig()
+        gen = MetaGenerator(config, router=mock_router)
+
+        mock_router.complete.return_value = "Still not JSON after retry."
+
+        with pytest.raises(ValueError, match="Failed to parse JSON"):
+            gen.generate_response_meta(platform="chatgpt", content="test content " * 20)
+
+    def test_no_retry_on_valid_json(self, mock_router):
+        """정상 JSON이면 재시도 없음."""
+        config = MetaLLMConfig()
+        gen = MetaGenerator(config, router=mock_router)
+
+        mock_router.complete.return_value = (
+            '{"summary": "정상", "key_claims": [], "stance": "neutral", "model": "gpt-4"}'
+        )
+
+        result = gen.generate_response_meta(platform="chatgpt", content="test content " * 20)
+        assert result.summary == "정상"
+        assert mock_router.complete.call_count == 1
+
+
 class TestMetaGeneratorAutoRouter:
     @patch("pkb.llm.router.LLMRouter.from_meta_llm")
     def test_auto_builds_router_when_none(self, mock_from_meta):

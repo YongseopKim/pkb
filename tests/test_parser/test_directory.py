@@ -186,6 +186,60 @@ class TestFindInputFilesRecursive:
             find_input_files_recursive(tmp_path / "nonexistent")
 
 
+class TestSkipNonConversationFiles:
+    def test_skip_readme_in_find_input_files(self, tmp_path):
+        """find_input_files (비재귀)에서도 README.md 제외."""
+        (tmp_path / "README.md").write_text("# Project")
+        (tmp_path / "claude.md").write_text(
+            "# [Claude](https://claude.ai/chat/abc)\n\n"
+            "## LLM 응답 1\n\nHello world content here."
+        )
+        files = find_input_files(tmp_path)
+        names = [f.name for f in files]
+        assert "README.md" not in names
+        assert "claude.md" in names
+
+    def test_skip_readme_md(self, tmp_path):
+        """README.md는 find_input_files_recursive에서 제외."""
+        from pkb.parser.directory import find_input_files_recursive
+
+        (tmp_path / "README.md").write_text("# Project")
+        (tmp_path / "claude.md").write_text(
+            "# [Claude](https://claude.ai/chat/abc)\n\n"
+            "## LLM 응답 1\n\nHello world content here."
+        )
+        files = find_input_files_recursive(tmp_path)
+        names = [f.name for f in files]
+        assert "README.md" not in names
+        assert "claude.md" in names
+
+    def test_skip_changelog_md(self, tmp_path):
+        """CHANGELOG.md도 제외."""
+        from pkb.parser.directory import find_input_files_recursive
+
+        (tmp_path / "CHANGELOG.md").write_text("# Changelog")
+        files = find_input_files_recursive(tmp_path)
+        assert len(files) == 0
+
+    def test_skip_in_subdirectory(self, tmp_path):
+        """서브디렉토리의 README.md도 제외."""
+        from pkb.parser.directory import find_input_files_recursive
+
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (sub / "README.md").write_text("# Sub")
+        files = find_input_files_recursive(tmp_path)
+        assert len(files) == 0
+
+    def test_case_insensitive_skip(self, tmp_path):
+        """readme.md (소문자)도 제외."""
+        from pkb.parser.directory import find_input_files_recursive
+
+        (tmp_path / "readme.md").write_text("# Project")
+        files = find_input_files_recursive(tmp_path)
+        assert len(files) == 0
+
+
 class TestParseFile:
     def test_dispatches_jsonl(self, tmp_path: Path):
         _write_sample_jsonl(tmp_path / "test.jsonl", "claude", "2026-02-21T06:00:00.000Z")

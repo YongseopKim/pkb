@@ -6,6 +6,7 @@ Parses MD exports with graceful degradation:
   Level 3: No structure → entire content as single assistant turn
 """
 
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,8 @@ from urllib.parse import urlparse
 from pkb.constants import PLATFORMS
 from pkb.models.jsonl import Conversation, ConversationMeta, Turn
 from pkb.parser.exceptions import MDParseError
+
+logger = logging.getLogger(__name__)
 
 # Regex for header: # [DisplayName](URL)
 _HEADER_RE = re.compile(r"^#\s+\[([^\]]+)\]\(([^)]+)\)\s*$")
@@ -89,9 +92,14 @@ def parse_md_string(
     # Fall back to Level 2
     if sections is None:
         sections = _split_sections_level2(content)
+        if sections is not None:
+            logger.debug("MD parse level 2 fallback (%d sections)", len(sections))
+    else:
+        logger.debug("MD parse level 1 matched (%d sections)", len(sections))
 
     # Fall back to Level 3 (whole content as single section)
     if sections is None:
+        logger.debug("MD parse level 3 fallback (whole content)")
         sections = [content]
 
     # Convert sections to turns

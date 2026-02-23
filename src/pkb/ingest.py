@@ -20,6 +20,8 @@ from pkb.parser.directory import SUPPORTED_EXTENSIONS, parse_file
 
 logger = logging.getLogger(__name__)
 
+MIN_CONTENT_LENGTH = 50
+
 
 def move_to_done(file_path: Path, watch_dir: Path, *, dry_run: bool = False) -> Path | None:
     """Move a successfully ingested file to the .done/ subdirectory.
@@ -148,10 +150,32 @@ class IngestPipeline:
         Returns:
             Dict with bundle_id and metadata, or None if duplicate.
             If merged into existing bundle, dict includes "merged": True.
+            Skip dict with "status" key starting with "skip_" for graceful skips.
         """
-        # 1. Parse input file
-        conv = parse_file(file_path)
+        from pkb.parser.exceptions import ParseError
+
+        # 1. Parse input file (graceful skip on parse error)
+        try:
+            conv = parse_file(file_path)
+        except ParseError as e:
+            logger.warning("Parse error, skipping %s: %s", file_path.name, e)
+            return {"status": "skip_parse_error", "reason": str(e)}
+
         question, question_hash = compute_question_hash(conv)
+
+        # 1b. Content minimum validation
+        total_content = sum(
+            len(t.content) for t in conv.turns if t.role == "assistant"
+        )
+        if not conv.turns or total_content < MIN_CONTENT_LENGTH:
+            logger.warning(
+                "Insufficient content (%d chars), skipping %s",
+                total_content, file_path.name,
+            )
+            return {
+                "status": "skip_insufficient_content",
+                "reason": f"Content too short ({total_content} chars)",
+            }
 
         # 2. Dedup / merge check with per-hash lock (skipped when force=True or dry_run)
         if not force and not self._dry_run:
@@ -192,8 +216,25 @@ class IngestPipeline:
 
         All LLM calls happen before any disk writes to prevent orphan directories.
         """
-        # 1. LLM: Generate bundle meta (for slug)
+        logger.info(
+            "Creating bundle from %s (platform=%s)",
+            file_path.name, conv.meta.platform,
+        )
+
+        # 1. Build response summaries and validate
         response_summaries = self._build_response_summaries(conv)
+        logger.debug("Response summaries: %d chars", len(response_summaries))
+        if len(response_summaries.strip()) < MIN_CONTENT_LENGTH:
+            logger.warning(
+                "Response summaries too short (%d chars), skipping %s",
+                len(response_summaries.strip()), file_path.name,
+            )
+            return {
+                "status": "skip_insufficient_content",
+                "reason": "Response summaries too short",
+            }
+
+        # 2. LLM: Generate bundle meta (for slug)
         bundle_meta = self._meta_gen.generate_bundle_meta(
             question=question,
             platforms=[conv.meta.platform],
@@ -214,6 +255,7 @@ class IngestPipeline:
             slug=bundle_meta.slug,
             question=question,
         )
+        logger.info("Bundle created: %s", bundle_id)
 
         # 4. Disk writes: create directory + copy raw + write MD files
         bundle_dir = self._kb_path / "bundles" / bundle_id

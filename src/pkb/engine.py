@@ -195,19 +195,25 @@ class IngestEngine:
     async def ingest_one(self, path: Path) -> IngestResult:
         """Process a single file with concurrency control."""
         async with self._file_semaphore:
+            logger.debug("Processing: %s", path.name)
             try:
                 result = await asyncio.to_thread(self._ingest_fn, path)
                 if result is None:
-                    return IngestResult(path=path, status="skipped")
-                if result.get("merged"):
-                    return IngestResult(
+                    ir = IngestResult(path=path, status="skipped")
+                elif result.get("status", "").startswith("skip_"):
+                    ir = IngestResult(path=path, status="skipped")
+                elif result.get("merged"):
+                    ir = IngestResult(
                         path=path, status="merged",
                         bundle_id=result.get("bundle_id"),
                         platform=result.get("platform"),
                     )
-                return IngestResult(
-                    path=path, status="ok", bundle_id=result.get("bundle_id"),
-                )
+                else:
+                    ir = IngestResult(
+                        path=path, status="ok", bundle_id=result.get("bundle_id"),
+                    )
+                logger.info("Processed %s -> %s", path.name, ir.status)
+                return ir
             except Exception as e:
                 logger.exception("Error ingesting %s", path)
                 return IngestResult(path=path, status="error", error=str(e))

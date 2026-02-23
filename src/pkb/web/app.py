@@ -38,9 +38,12 @@ def create_app(state: AppState) -> FastAPI:
     app.state.templates = templates
 
     # Register routes
+    from pkb.web.routes.analytics import router as analytics_router
     from pkb.web.routes.bundles import router as bundles_router
     from pkb.web.routes.chat import router as chat_router
+    from pkb.web.routes.digest import router as digest_router
     from pkb.web.routes.duplicates import router as duplicates_router
+    from pkb.web.routes.relations import router as relations_router
     from pkb.web.routes.search import router as search_router
     from pkb.web.routes.settings import router as settings_router
     from pkb.web.routes.topics import router as topics_router
@@ -49,6 +52,9 @@ def create_app(state: AppState) -> FastAPI:
     app.include_router(search_router)
     app.include_router(topics_router)
     app.include_router(duplicates_router)
+    app.include_router(relations_router)
+    app.include_router(digest_router)
+    app.include_router(analytics_router)
     app.include_router(settings_router)
     app.include_router(chat_router)
 

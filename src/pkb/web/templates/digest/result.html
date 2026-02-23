@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}PKB — Digest Result{% endblock %}
+{% block content %}
+<h1>Digest Result</h1>
+{% if result.topic %}
+<p><strong>Topic:</strong> {{ result.topic }}</p>
+{% endif %}
+{% if result.domain %}
+<p><strong>Domain:</strong> {{ result.domain }}</p>
+{% endif %}
+<p><strong>Bundles referenced:</strong> {{ result.bundle_count }}</p>
+
+<div class="digest-content">
+{{ result.content }}
+</div>
+
+{% if result.sources %}
+<h2>Sources</h2>
+<ul>
+    {% for s in result.sources %}
+    <li>
+        <a href="/bundles/{{ s.bundle_id }}">{{ s.bundle_id }}</a>
+        {% if s.summary %} — {{ s.summary[:80] }}{% if s.summary|length > 80 %}...{% endif %}{% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+<p><a href="/digest">Generate another digest</a></p>
+{% endblock %}

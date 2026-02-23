@@ -9,8 +9,11 @@ from pkb import __version__
 
 @click.group()
 @click.version_option(version=__version__, prog_name="pkb")
-def cli() -> None:
+@click.option("-v", "--verbose", count=True, help="Verbosity: -v=info, -vv=debug.")
+def cli(verbose: int) -> None:
     """PKB — Private Knowledge Base CLI."""
+    from pkb.logging_config import setup_logging
+    setup_logging(verbosity=verbose)
 
 
 @cli.command()
@@ -172,6 +175,10 @@ def ingest(path: str, kb: str, dry_run: bool) -> None:
             if result is None:
                 skipped += 1
                 click.echo(f"  {prefix}SKIP (duplicate): {f.name}")
+            elif result.get("status", "").startswith("skip_"):
+                skipped += 1
+                reason = result.get("reason", "unknown")
+                click.echo(f"  {prefix}SKIP ({reason}): {f.name}")
             elif result.get("merged"):
                 merged += 1
                 click.echo(
@@ -672,6 +679,131 @@ def dedup_confirm(pair_id: int) -> None:
     repo.close()
 
 
+@cli.group()
+def relate() -> None:
+    """Knowledge graph: discover and manage bundle relations."""
+
+
+@relate.command("scan")
+@click.option("--kb", default=None, help="Knowledge base name filter.")
+@click.option(
+    "--type",
+    "relation_type",
+    type=click.Choice(["similar", "related", "all"]),
+    default="all",
+    help="Relation type to scan for.",
+)
+def relate_scan(kb: str | None, relation_type: str) -> None:
+    """Scan bundles to discover relations (similar/related)."""
+    from pkb.config import get_pkb_home, load_config
+    from pkb.constants import CONFIG_FILENAME
+    from pkb.db.chromadb_client import ChunkStore
+    from pkb.db.postgres import BundleRepository
+    from pkb.relations import RelationBuilder
+
+    pkb_home = get_pkb_home()
+    config = load_config(pkb_home / CONFIG_FILENAME)
+
+    try:
+        repo = BundleRepository(config.database.postgres)
+        chunk_store = ChunkStore(config.database.chromadb)
+    except Exception as e:
+        raise click.ClickException(f"Database connection failed: {e}")
+
+    builder = RelationBuilder(
+        repo=repo, chunk_store=chunk_store, config=config.relations,
+    )
+
+    click.echo("Scanning for relations...")
+    stats = builder.scan(kb=kb)
+    click.echo(
+        f"Done: {stats['scanned']} bundles scanned, "
+        f"{stats['new_relations']} relations found."
+    )
+    repo.close()
+
+
+@relate.command("list")
+@click.option(
+    "--type",
+    "relation_type",
+    type=click.Choice(["similar", "related", "all"]),
+    default="all",
+    help="Filter by relation type.",
+)
+@click.option("--kb", default=None, help="Knowledge base name filter.")
+def relate_list(relation_type: str, kb: str | None) -> None:
+    """List all discovered relations."""
+    from pkb.config import get_pkb_home, load_config
+    from pkb.constants import CONFIG_FILENAME
+    from pkb.db.postgres import BundleRepository
+
+    pkb_home = get_pkb_home()
+    config = load_config(pkb_home / CONFIG_FILENAME)
+
+    try:
+        repo = BundleRepository(config.database.postgres)
+    except Exception as e:
+        raise click.ClickException(f"Database connection failed: {e}")
+
+    filter_type = None if relation_type == "all" else relation_type
+    relations = repo.list_all_relations(relation_type=filter_type, kb=kb)
+
+    if not relations:
+        click.echo("No relations found.")
+    else:
+        for r in relations:
+            click.echo(
+                f"  {r['source_bundle_id']} → {r['target_bundle_id']}  "
+                f"({r['relation_type']}, score: {r['score']:.2f})"
+            )
+        click.echo(f"\nTotal: {len(relations)} relation(s)")
+    repo.close()
+
+
+@relate.command("show")
+@click.argument("bundle_id")
+@click.option(
+    "--type",
+    "relation_type",
+    type=click.Choice(["similar", "related", "all"]),
+    default="all",
+    help="Filter by relation type.",
+)
+def relate_show(bundle_id: str, relation_type: str) -> None:
+    """Show relations for a specific bundle."""
+    from pkb.config import get_pkb_home, load_config
+    from pkb.constants import CONFIG_FILENAME
+    from pkb.db.postgres import BundleRepository
+
+    pkb_home = get_pkb_home()
+    config = load_config(pkb_home / CONFIG_FILENAME)
+
+    try:
+        repo = BundleRepository(config.database.postgres)
+    except Exception as e:
+        raise click.ClickException(f"Database connection failed: {e}")
+
+    filter_type = None if relation_type == "all" else relation_type
+    relations = repo.list_relations(bundle_id, relation_type=filter_type)
+
+    if not relations:
+        click.echo(f"No relations for {bundle_id}")
+    else:
+        click.echo(f"Relations for {bundle_id}:")
+        for r in relations:
+            other = (
+                r["target_bundle_id"]
+                if r["source_bundle_id"] == bundle_id
+                else r["source_bundle_id"]
+            )
+            click.echo(
+                f"  → {other}  ({r['relation_type']}, score: {r['score']:.2f})"
+            )
+        click.echo(f"\nTotal: {len(relations)} relation(s)")
+    repo.close()
+
+
 @cli.command()
 @click.argument("query")
 @click.option(
@@ -976,6 +1108,9 @@ def _build_watch_callback(
             result = pipeline.ingest_file(file_path, force=bool(existing_bundle_id))
             if result is None:
                 click.echo(f"  SKIP (duplicate): {file_path.name}")
+            elif result.get("status", "").startswith("skip_"):
+                reason = result.get("reason", "unknown")
+                click.echo(f"  SKIP ({reason}): {file_path.name}")
             elif result.get("merged"):
                 click.echo(
                     f"  MERGE: {file_path.name} → {result['bundle_id']}"
@@ -1250,8 +1385,69 @@ def watch(kb: str | None) -> None:
 
 
 @cli.command()
+@click.option("--topic", default=None, help="Topic to digest.")
+@click.option("--domain", default=None, help="Domain to digest.")
 @click.option("--kb", default=None, help="Knowledge base name filter.")
-def chat(kb: str | None) -> None:
+@click.option("--output", "-o", default=None, type=click.Path(), help="Save to file.")
+def digest(topic: str | None, domain: str | None, kb: str | None, output: str | None) -> None:
+    """Generate a knowledge digest for a topic or domain."""
+    if not topic and not domain:
+        raise click.ClickException("Specify --topic or --domain")
+
+    from pkb.config import build_llm_router, get_pkb_home, load_config
+    from pkb.constants import CONFIG_FILENAME
+    from pkb.db.chromadb_client import ChunkStore
+    from pkb.db.postgres import BundleRepository
+    from pkb.digest import DigestEngine
+    from pkb.search.engine import SearchEngine
+
+    pkb_home = get_pkb_home()
+    config = load_config(pkb_home / CONFIG_FILENAME)
+
+    try:
+        repo = BundleRepository(config.database.postgres)
+        chunk_store = ChunkStore(config.database.chromadb)
+    except Exception as e:
+        raise click.ClickException(f"Database connection failed: {e}")
+
+    search_engine = SearchEngine(repo=repo, chunk_store=chunk_store)
+    router = build_llm_router(config)
+
+    engine = DigestEngine(
+        repo=repo,
+        search_engine=search_engine,
+        router=router,
+        config=config.digest,
+    )
+
+    click.echo("Generating digest...")
+
+    if topic:
+        result = engine.digest_topic(topic, kb=kb)
+    else:
+        result = engine.digest_domain(domain, kb=kb)
+
+    if output:
+        from pathlib import Path
+
+        Path(output).write_text(result.content, encoding="utf-8")
+        click.echo(f"Saved to {output}")
+    else:
+        click.echo(f"\n{result.content}")
+        click.echo(f"\n--- {result.bundle_count} bundles referenced ---")
+
+    repo.close()
+
+
+@cli.command()
+@click.option("--kb", default=None, help="Knowledge base name filter.")
+@click.option(
+    "--mode",
+    type=click.Choice(["explorer", "analyst", "writer"]),
+    default="explorer",
+    help="Conversation mode.",
+)
+def chat(kb: str | None, mode: str) -> None:
     """Interactive RAG chatbot.
 
     Ask questions against your knowledge base. Type 'quit' or 'exit' to stop.
@@ -1280,6 +1476,7 @@ def chat(kb: str | None) -> None:
         search_engine=search_engine,
         router=router,
         kb=kb,
+        mode=mode,
     )
 
     session = ChatSession()
@@ -1303,6 +1500,14 @@ def chat(kb: str | None) -> None:
 
     repo.close()
     click.echo("Bye!")
+
+
+@cli.command("mcp-serve")
+def mcp_serve() -> None:
+    """Start PKB as an MCP server (stdio transport)."""
+    from pkb.mcp_server import main
+
+    main()
 
 
 @cli.command()
@@ -1520,6 +1725,103 @@ def migrate_domain(old_domain: str, new_domain: str) -> None:
 
     count = repo.rename_domain(old_domain, new_domain)
     click.echo(f"Migrated {count} bundle(s): '{old_domain}' → '{new_domain}'")
+    repo.close()
+
+
+@cli.command()
+@click.option("--kb", default=None, help="Knowledge base name filter.")
+@click.option("--domain", is_flag=True, default=False, help="Show domain distribution detail.")
+@click.option("--json", "json_mode", is_flag=True, default=False, help="JSON output.")
+def stats(kb: str | None, domain: bool, json_mode: bool) -> None:
+    """Show knowledge base statistics.
+
+    Displays overview stats by default. Use --domain for domain breakdown,
+    --json for machine-readable output.
+    """
+    from pkb.analytics import AnalyticsEngine
+    from pkb.config import get_pkb_home, load_config
+    from pkb.constants import CONFIG_FILENAME
+    from pkb.db.postgres import BundleRepository
+
+    pkb_home = get_pkb_home()
+    config = load_config(pkb_home / CONFIG_FILENAME)
+
+    try:
+        repo = BundleRepository(config.database.postgres)
+    except Exception as e:
+        raise click.ClickException(f"Database connection failed: {e}")
+
+    engine = AnalyticsEngine(repo=repo)
+
+    if domain:
+        data = engine.domain_distribution(kb=kb)
+        if json_mode:
+            import json
+
+            click.echo(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            click.echo("Domain Distribution:")
+            for d in data:
+                click.echo(f"  {d['domain']}: {d['count']}")
+    else:
+        data = engine.overview(kb=kb)
+        if json_mode:
+            import json
+
+            click.echo(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            click.echo(f"Total bundles:   {data['total_bundles']}")
+            click.echo(f"Total relations: {data['total_relations']}")
+            click.echo(f"Domains:         {data['domain_count']}")
+            click.echo(f"Topics:          {data['topic_count']}")
+
+    repo.close()
+
+
+@cli.command()
+@click.option(
+    "--period",
+    type=click.Choice(["weekly", "monthly"]),
+    default="weekly",
+    help="Report period (default: weekly).",
+)
+@click.option("--kb", default=None, help="Knowledge base name filter.")
+@click.option("--output", "-o", default=None, type=click.Path(), help="Save to file.")
+def report(period: str, kb: str | None, output: str | None) -> None:
+    """Generate a knowledge activity report.
+
+    Produces a markdown report summarizing recent activity.
+    """
+    from pkb.analytics import AnalyticsEngine
+    from pkb.config import get_pkb_home, load_config
+    from pkb.constants import CONFIG_FILENAME
+    from pkb.db.postgres import BundleRepository
+    from pkb.report import ReportGenerator
+
+    pkb_home = get_pkb_home()
+    config = load_config(pkb_home / CONFIG_FILENAME)
+
+    try:
+        repo = BundleRepository(config.database.postgres)
+    except Exception as e:
+        raise click.ClickException(f"Database connection failed: {e}")
+
+    engine = AnalyticsEngine(repo=repo)
+    gen = ReportGenerator(repo=repo, analytics=engine)
+
+    if period == "monthly":
+        content = gen.monthly(kb=kb)
+    else:
+        content = gen.weekly(kb=kb)
+
+    if output:
+        from pathlib import Path
+
+        Path(output).write_text(content, encoding="utf-8")
+        click.echo(f"Saved to {output}")
+    else:
+        click.echo(content)
+
     repo.close()
 
 

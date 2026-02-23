@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PKB (Private Knowledge Base) is a Python CLI tool that processes multi-LLM conversation exports (JSONL and MD from llm-chat-exporter Chrome extension) into organized, searchable "bundles" with auto-generated metadata. The primary language of the project documents and user conversations is Korean.
 
-**Current status**: Phase 0 through Phase 4 complete. `docs/design-v1.md` is the authoritative design document.
+**Current status**: Phase 0 through Phase 7 complete. `docs/design-v1.md` is the authoritative design document.
 
 ## Architecture
 
@@ -15,7 +15,7 @@ PKB separates **tools** (this repo) from **data** (separate KB repos):
 ```
 pkb/                          <- This repo (tool)
 ├── src/pkb/                  <- Python package
-│   ├── cli.py                <- Click CLI (init, parse, ingest, batch, topics, search, reindex, regenerate, watch, dedup, web, chat, kb, db)
+│   ├── cli.py                <- Click CLI (init, parse, ingest, batch, topics, search, reindex, regenerate, watch, dedup, relate, digest, stats, report, web, chat, mcp-serve, kb, db, doctor)
 │   ├── config.py             <- Config loading
 │   ├── init.py               <- pkb init logic
 │   ├── ingest.py             <- IngestPipeline orchestrator
@@ -25,7 +25,14 @@ pkb/                          <- This repo (tool)
 │   ├── regenerate.py         <- Regenerator (re-run LLM meta extraction)
 │   ├── watcher.py            <- KBWatcher + AsyncFileEventHandler (watchdog auto-ingest)
 │   ├── dedup.py              <- DuplicateDetector (embedding similarity)
-│   ├── constants.py          <- Platform names, path constants
+│   ├── relations.py          <- RelationBuilder (knowledge graph edges)
+│   ├── digest.py             <- DigestEngine (topic/domain knowledge summaries)
+│   ├── analytics.py          <- AnalyticsEngine (bundle statistics aggregation)
+│   ├── report.py             <- ReportGenerator (weekly/monthly markdown reports)
+│   ├── doctor.py             <- System diagnostics (DB, ChromaDB, LLM API health checks)
+│   ├── mcp_server.py         <- MCP server (FastMCP, 4 tools for Claude Code)
+│   ├── logging_config.py     <- Logging setup (console + file handlers)
+│   ├── constants.py          <- Platform names, path constants, skip filenames
 │   ├── models/               <- Pydantic models (jsonl, config, vocab, meta)
 │   ├── parser/               <- Input parsing (JSONL + MD, file + directory)
 │   ├── db/                   <- Database layer (PostgreSQL + ChromaDB + Alembic migrations)
@@ -36,8 +43,8 @@ pkb/                          <- This repo (tool)
 │   ├── chat/                 <- RAG chatbot engine (ChatEngine, context assembly)
 │   ├── web/                  <- FastAPI web UI (htmx, Jinja2 templates)
 │   └── data/                 <- Bundled seed data (domains, topics)
-├── tests/                    <- 778 tests (733 mock + 45 integration)
-├── prompts/                  <- LLM prompt templates (response_meta, bundle_meta, chat_system)
+├── tests/                    <- 934 tests (878 mock + 56 integration)
+├── prompts/                  <- LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 └── pyproject.toml
 
 ~/.pkb/                       <- Global config (auto-generated)
@@ -73,9 +80,11 @@ pkb/                          <- This repo (tool)
 
 ```bash
 pip install -e ".[dev]"          # Install in dev mode (includes all deps)
-pytest                            # Run 733 mock tests (+ 45 integration with PKB_DB_INTEGRATION=1)
+pytest                            # Run 910 tests (854 mock + 56 integration with PKB_DB_INTEGRATION=1)
 ruff check src/ tests/            # Lint (line-length=100)
 pkb --version                     # CLI version check
+pkb -v <command>                  # Verbose mode (INFO logging to console + file)
+pkb -vv <command>                 # Debug mode (DEBUG logging to console + file)
 pkb init                          # Initialize ~/.pkb/
 pkb parse <file_or_dir>           # Parse JSONL and show summary
 pkb ingest <path> --kb <name>     # Ingest into KB (success → file moves to inbox/.done/)
@@ -100,8 +109,24 @@ pkb dedup scan --kb <name>        # Scan for duplicate bundles
 pkb dedup list                    # List duplicate pairs
 pkb dedup dismiss <pair_id>       # Mark pair as non-duplicate
 pkb dedup confirm <pair_id>       # Confirm duplicate pair
+pkb relate scan --kb <name>       # Scan for bundle relations (knowledge graph)
+pkb relate scan --type similar    # Scan specific relation type
+pkb relate list                   # List all relations
+pkb relate show <bundle_id>       # Show relations for a bundle
+pkb digest --topic python         # Generate knowledge digest for a topic
+pkb digest --domain dev --kb n    # Generate digest for a domain
+pkb digest --topic ai -o out.md   # Save digest to file
+pkb stats                         # Show KB overview stats
+pkb stats --domain                # Show domain distribution detail
+pkb stats --json                  # JSON output mode
+pkb stats --kb <name>             # Filter by KB
+pkb report                        # Generate weekly activity report
+pkb report --period monthly       # Generate monthly report (+ knowledge gaps)
+pkb report --kb <name> -o out.md  # Filter by KB, save to file
 pkb web --port 8080               # Start local web UI (FastAPI + htmx)
 pkb chat --kb <name>              # Interactive RAG chatbot REPL
+pkb chat --mode analyst           # Chat in analyst mode (explorer/analyst/writer)
+pkb mcp-serve                     # Start PKB as MCP server (stdio transport)
 pkb db upgrade                    # Upgrade DB schema to latest (Alembic)
 pkb db upgrade --revision 0001    # Upgrade to specific revision
 pkb db downgrade 0001             # Downgrade to specific revision
@@ -110,6 +135,9 @@ pkb db history                    # Show migration history
 pkb db stamp head                 # Stamp revision without running SQL
 pkb db migrate-domain <old> <new> # Rename domain in bundle_domains
 pkb kb list                       # List configured KBs with bundle counts
+pkb doctor                        # System diagnostics (DB, ChromaDB, LLM API health)
+pkb doctor --skip-llm             # Skip LLM API checks
+pkb doctor --skip-db              # Skip DB checks
 pkb db reset --kb <name>          # Delete all data for a KB (requires confirmation)
 ```
 
@@ -121,7 +149,7 @@ Requires Docker Desktop.
 # Start test containers (once)
 docker compose -f docker/docker-compose.test.yml up -d
 
-# Run integration tests only (35 DB tests)
+# Run integration tests only (46 DB tests)
 PKB_DB_INTEGRATION=1 pytest tests/integration/db/ -v
 
 # Run all tests (mock + integration)
@@ -190,6 +218,9 @@ database:
     host: "192.168.1.100"
     port: 8000
     collection: pkb_chunks
+digest:                           # Optional, all fields have defaults
+  max_bundles: 20                 # Max bundles to include in digest
+  max_tokens: 4096                # Max LLM response tokens
 concurrency:                      # Optional, all fields have defaults
   max_concurrent_files: 4         # Concurrent file processing workers
   max_concurrent_llm: 4           # LLM API concurrent call limit
@@ -203,10 +234,10 @@ concurrency:                      # Optional, all fields have defaults
 
 ## Repository Contents
 
-- `src/pkb/` — Python package (Phase 0 through 4 implemented)
-- `tests/` — 778 tests (733 mock + 45 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, watcher, dedup, LLM routing, web, chat, kb
+- `src/pkb/` — Python package (Phase 0 through 7 implemented)
+- `tests/` — 934 tests (878 mock + 56 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, watcher, dedup, LLM routing, web, chat, kb, relations, digest, MCP server, analytics, doctor
 - `docker/` — Docker Compose for local test DB (PostgreSQL + ChromaDB)
-- `prompts/` — LLM prompt templates (response_meta, bundle_meta, chat_system)
+- `prompts/` — LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 - `docs/design-v1.md` — **Unified design document**. Single source of truth.
 - `exporter-examples/` — Sample JSONL/MD files for testing
 
@@ -249,6 +280,9 @@ All MD turns are `role="assistant"`. Platform detected from header URL domain, f
 - **Phase 2** ✓: Search layer — `pkb search` with hybrid FTS + semantic search, weighted scoring (0.4 FTS + 0.6 semantic)
 - **Phase 3** ✓: Automation — `pkb reindex` (frontmatter sync), `pkb regenerate` (LLM re-extraction), `pkb watch` (watchdog auto-ingest)
 - **Phase 4** ✓: Topic CLI (approve/merge/reject), duplicate detection, LLM routing (multi-provider), web UI (FastAPI + htmx), RAG chatbot
+- **Phase 5** ✓: Knowledge graph — `bundle_relations` table, `RelationBuilder` (similar/related/sequel edges), `pkb relate` CLI, relations web UI
+- **Phase 6** ✓: Smart Assistant — `DigestEngine` (topic/domain summaries), conversation modes (explorer/analyst/writer), MCP server (`pkb mcp-serve`), digest web UI
+- **Phase 7** ✓: Analytics Dashboard — `AnalyticsEngine` (statistics aggregation), `ReportGenerator` (weekly/monthly reports), `pkb stats`/`pkb report` CLI, web dashboard (Chart.js)
 
 ## Database Migration Workflow (Alembic)
 
@@ -258,6 +292,7 @@ Schema is managed by Alembic migrations in `src/pkb/db/migrations/versions/`. Ra
 - `0001_initial_schema` — All 6 core tables + tsvector trigger
 - `0002_add_source_path` — `bundles.source_path` column + index
 - `0003_add_source_path_to_responses` — `bundle_responses.source_path` column + index (per-platform file tracking for merged bundles)
+- `0004_bundle_relations` — `bundle_relations` table + indexes (knowledge graph edges)
 
 **Source path tracking**: `bundles.source_path` stores the first-ingested file path. `bundle_responses.source_path` stores per-platform file paths (important for merged bundles). `find_by_source_path()` checks `bundle_responses` first, then falls back to `bundles`.
 

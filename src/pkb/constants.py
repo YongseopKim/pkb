@@ -21,3 +21,9 @@ TOPICS_FILENAME = "topics.yaml"
 
 # Inbox cleanup
 DONE_DIR_NAME = ".done"
+
+# Non-conversation MD files to skip during discovery
+SKIP_FILENAMES = frozenset({
+    "readme.md", "changelog.md", "license.md",
+    "contributing.md", "todo.md", "notes.md",
+})

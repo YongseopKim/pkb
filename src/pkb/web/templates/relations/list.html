@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}PKB — Relations{% endblock %}
+{% block content %}
+<h1>Bundle Relations ({{ total }})</h1>
+<div class="filter-bar">
+    <a href="/relations?relation_type=all" {% if current_type == 'all' %}class="active"{% endif %}>All</a>
+    <a href="/relations?relation_type=similar" {% if current_type == 'similar' %}class="active"{% endif %}>Similar</a>
+    <a href="/relations?relation_type=related" {% if current_type == 'related' %}class="active"{% endif %}>Related</a>
+    <a href="/relations?relation_type=sequel" {% if current_type == 'sequel' %}class="active"{% endif %}>Sequel</a>
+</div>
+{% if relations %}
+<table>
+    <thead>
+        <tr>
+            <th>Source</th>
+            <th>Target</th>
+            <th>Type</th>
+            <th>Score</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in relations %}
+        <tr>
+            <td><a href="/relations/{{ r.source_bundle_id }}">{{ r.source_bundle_id }}</a></td>
+            <td><a href="/relations/{{ r.target_bundle_id }}">{{ r.target_bundle_id }}</a></td>
+            <td>{{ r.relation_type }}</td>
+            <td>{{ "%.2f"|format(r.score) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No relations found.</p>
+{% endif %}
+{% endblock %}

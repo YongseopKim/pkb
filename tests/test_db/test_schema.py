@@ -16,6 +16,7 @@ class TestSchemaDefinitions:
             "topic_vocab",
             "bundle_responses",
             "duplicate_pairs",
+            "bundle_relations",
         }
         assert TABLE_NAMES == expected
 

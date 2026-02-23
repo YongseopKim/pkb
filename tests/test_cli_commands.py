@@ -1570,3 +1570,230 @@ class TestPeriodicRetryScan:
             _periodic_retry_scan([inbox], collector, shutdown, interval_seconds=300),
             timeout=1.0,
         )
+
+
+class TestRelateCommand:
+    @patch("pkb.relations.RelationBuilder")
+    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_relate_scan(
+        self, mock_home, mock_load, mock_repo_cls, mock_store_cls, mock_builder_cls,
+        runner, tmp_path,
+    ):
+        mock_home.return_value = tmp_path
+        mock_config = MagicMock()
+        mock_load.return_value = mock_config
+        mock_builder = MagicMock()
+        mock_builder.scan.return_value = {"scanned": 10, "new_relations": 5}
+        mock_builder_cls.return_value = mock_builder
+
+        result = runner.invoke(cli, ["relate", "scan"])
+        assert result.exit_code == 0, result.output
+        assert "10" in result.output
+        assert "5" in result.output
+
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_relate_list(
+        self, mock_home, mock_load, mock_repo_cls, runner, tmp_path,
+    ):
+        mock_home.return_value = tmp_path
+        mock_load.return_value = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.list_all_relations.return_value = [
+            {
+                "id": 1,
+                "source_bundle_id": "20260101-a-abc1",
+                "target_bundle_id": "20260101-b-def2",
+                "relation_type": "similar",
+                "score": 0.85,
+                "created_at": None,
+            },
+        ]
+        mock_repo_cls.return_value = mock_repo
+
+        result = runner.invoke(cli, ["relate", "list"])
+        assert result.exit_code == 0, result.output
+        assert "20260101-a-abc1" in result.output
+
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_relate_show(
+        self, mock_home, mock_load, mock_repo_cls, runner, tmp_path,
+    ):
+        mock_home.return_value = tmp_path
+        mock_load.return_value = MagicMock()
+        mock_repo = MagicMock()
+        mock_repo.list_relations.return_value = [
+            {
+                "id": 1,
+                "source_bundle_id": "20260101-a-abc1",
+                "target_bundle_id": "20260101-b-def2",
+                "relation_type": "similar",
+                "score": 0.85,
+                "created_at": None,
+            },
+        ]
+        mock_repo_cls.return_value = mock_repo
+
+        result = runner.invoke(cli, ["relate", "show", "20260101-a-abc1"])
+        assert result.exit_code == 0, result.output
+        assert "20260101-b-def2" in result.output
+
+
+class TestDigestCommand:
+    def test_digest_help_exists(self, runner):
+        result = runner.invoke(cli, ["digest", "--help"])
+        assert result.exit_code == 0
+        assert "topic" in result.output.lower() or "domain" in result.output.lower()
+
+    def test_digest_requires_topic_or_domain(self, runner):
+        result = runner.invoke(cli, ["digest"])
+        assert result.exit_code != 0
+        assert "topic" in result.output.lower() or "domain" in result.output.lower()
+
+
+class TestStatsCommand:
+    def test_stats_help(self, runner):
+        result = runner.invoke(cli, ["stats", "--help"])
+        assert result.exit_code == 0
+        assert "--kb" in result.output
+        assert "--json" in result.output
+
+    @patch("pkb.analytics.AnalyticsEngine")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_stats_overview(
+        self, mock_home, mock_load, mock_repo_cls, mock_engine_cls,
+        runner, tmp_path,
+    ):
+        mock_home.return_value = tmp_path
+        mock_load.return_value = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.overview.return_value = {
+            "total_bundles": 42,
+            "total_relations": 10,
+            "domain_count": 5,
+            "topic_count": 20,
+        }
+        mock_engine_cls.return_value = mock_engine
+
+        result = runner.invoke(cli, ["stats"])
+        assert result.exit_code == 0, result.output
+        assert "42" in result.output
+
+    @patch("pkb.analytics.AnalyticsEngine")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_stats_json_output(
+        self, mock_home, mock_load, mock_repo_cls, mock_engine_cls,
+        runner, tmp_path,
+    ):
+        mock_home.return_value = tmp_path
+        mock_load.return_value = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.overview.return_value = {
+            "total_bundles": 10,
+            "total_relations": 3,
+            "domain_count": 2,
+            "topic_count": 5,
+        }
+        mock_engine_cls.return_value = mock_engine
+
+        result = runner.invoke(cli, ["stats", "--json"])
+        assert result.exit_code == 0, result.output
+        parsed = json.loads(result.output)
+        assert parsed["total_bundles"] == 10
+
+    @patch("pkb.analytics.AnalyticsEngine")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_stats_domain_detail(
+        self, mock_home, mock_load, mock_repo_cls, mock_engine_cls,
+        runner, tmp_path,
+    ):
+        mock_home.return_value = tmp_path
+        mock_load.return_value = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.domain_distribution.return_value = [
+            {"domain": "dev", "count": 15},
+        ]
+        mock_engine_cls.return_value = mock_engine
+
+        result = runner.invoke(cli, ["stats", "--domain"])
+        assert result.exit_code == 0, result.output
+        assert "dev" in result.output
+        assert "15" in result.output
+
+
+class TestReportCommand:
+    def test_report_help(self, runner):
+        result = runner.invoke(cli, ["report", "--help"])
+        assert result.exit_code == 0
+        assert "--period" in result.output
+
+    @patch("pkb.report.ReportGenerator")
+    @patch("pkb.analytics.AnalyticsEngine")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_report_weekly(
+        self, mock_home, mock_load, mock_repo_cls, mock_engine_cls,
+        mock_gen_cls, runner, tmp_path,
+    ):
+        mock_home.return_value = tmp_path
+        mock_load.return_value = MagicMock()
+        mock_gen = MagicMock()
+        mock_gen.weekly.return_value = "# Weekly Report Content"
+        mock_gen_cls.return_value = mock_gen
+
+        result = runner.invoke(cli, ["report"])
+        assert result.exit_code == 0, result.output
+        assert "Weekly Report Content" in result.output
+
+    @patch("pkb.report.ReportGenerator")
+    @patch("pkb.analytics.AnalyticsEngine")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_report_monthly(
+        self, mock_home, mock_load, mock_repo_cls, mock_engine_cls,
+        mock_gen_cls, runner, tmp_path,
+    ):
+        mock_home.return_value = tmp_path
+        mock_load.return_value = MagicMock()
+        mock_gen = MagicMock()
+        mock_gen.monthly.return_value = "# Monthly Report Content"
+        mock_gen_cls.return_value = mock_gen
+
+        result = runner.invoke(cli, ["report", "--period", "monthly"])
+        assert result.exit_code == 0, result.output
+        assert "Monthly Report Content" in result.output
+
+    @patch("pkb.report.ReportGenerator")
+    @patch("pkb.analytics.AnalyticsEngine")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_report_save_to_file(
+        self, mock_home, mock_load, mock_repo_cls, mock_engine_cls,
+        mock_gen_cls, runner, tmp_path,
+    ):
+        mock_home.return_value = tmp_path
+        mock_load.return_value = MagicMock()
+        mock_gen = MagicMock()
+        mock_gen.weekly.return_value = "# Report"
+        mock_gen_cls.return_value = mock_gen
+
+        outfile = tmp_path / "report.md"
+        result = runner.invoke(cli, ["report", "-o", str(outfile)])
+        assert result.exit_code == 0, result.output
+        assert outfile.exists()
+        assert outfile.read_text() == "# Report"

@@ -23,7 +23,7 @@ PKB는 **도구**(이 리포)와 **데이터**(별도 KB 리포)를 분리합니
 pkb/                            ← 도구 (이 리포지토리)
 ├── src/pkb/                    ← Python 패키지
 ├── prompts/                    ← LLM 프롬프트 템플릿
-├── tests/                      ← 778개 pytest 테스트
+├── tests/                      ← 910개 pytest 테스트
 └── pyproject.toml
 
 ~/.pkb/                         ← 글로벌 설정 (자동 생성)
@@ -118,14 +118,33 @@ pkb dedup list                  # 중복 쌍 목록
 pkb dedup dismiss <pair_id>     # 비중복 마킹
 pkb dedup confirm <pair_id>     # 중복 확인
 
+# 지식 그래프 (번들 관계)
+pkb relate scan --kb personal   # 관계 스캔 (유사/관련/연속)
+pkb relate list                 # 전체 관계 목록
+pkb relate show <bundle_id>     # 번들별 관계 조회
+
+# 지식 다이제스트 (주제/도메인 요약)
+pkb digest --topic python       # 토픽 기반 지식 종합 요약
+pkb digest --domain dev --kb n  # 도메인 기반 요약
+pkb digest --topic ai -o out.md # 파일로 저장
+
 # 로컬 웹 UI (FastAPI + htmx)
 pkb web --port 8080             # 웹 서버 시작
 
 # RAG 챗봇 (지식베이스 기반 대화)
 pkb chat --kb personal          # 인터랙티브 챗봇 REPL
+pkb chat --mode analyst         # 분석가 모드 (explorer/analyst/writer)
+
+# MCP 서버 (Claude Code 연동)
+pkb mcp-serve                   # stdio MCP 서버 시작
 
 # KB 관리
 pkb kb list                     # 등록된 KB 목록 + 번들 수
+
+# 시스템 진단
+pkb doctor                      # DB 연결, ChromaDB, LLM API 등 상태 점검
+pkb doctor --skip-llm           # LLM API 체크 건너뛰기
+pkb doctor --skip-db            # DB 체크 건너뛰기
 
 # 데이터베이스 관리
 pkb db upgrade                  # 최신 스키마로 업그레이드
@@ -167,7 +186,7 @@ pkb db reset --kb personal      # KB 데이터 전체 삭제 (확인 필요)
 
 ```bash
 # 테스트
-pytest                       # 778개 테스트 (733 mock + 45 integration)
+pytest                       # 910개 테스트 (854 mock + 56 integration)
 
 # 통합 테스트 (Docker 필요)
 docker compose -f docker/docker-compose.test.yml up -d
@@ -189,6 +208,9 @@ pkb --version
 | **2** | ✅ 완료 | 검색 레이어 (`pkb search` — 하이브리드 FTS + 시맨틱, 가중 점수 0.4:0.6) |
 | **3** | ✅ 완료 | 자동화 (`pkb reindex` frontmatter 동기화, `pkb regenerate` LLM 재추출, `pkb watch` 자동 인제스트) |
 | **4** | ✅ 완료 | 토픽 CLI, 중복 감지, LLM 라우팅, 웹 UI (FastAPI + htmx), RAG 챗봇 |
+| **5** | ✅ 완료 | 지식 그래프 (`bundle_relations`, `pkb relate` CLI, 관계 웹 UI, D3.js 그래프 API) |
+| **6** | ✅ 완료 | 스마트 어시스턴트 (`DigestEngine`, 대화 모드 explorer/analyst/writer, MCP 서버 `pkb mcp-serve`, 다이제스트 웹 UI) |
+| **7** | ✅ 완료 | 분석 대시보드 (`AnalyticsEngine`, `ReportGenerator`, `pkb stats`/`pkb report` CLI, Chart.js 웹 대시보드) |
 
 자세한 설계는 [`docs/design-v1.md`](docs/design-v1.md)를 참조하세요.
 

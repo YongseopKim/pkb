@@ -70,7 +70,7 @@ def repo(db_config, _create_schema):
     r = BundleRepository(db_config)
     r._conn.execute(
         "TRUNCATE bundles, bundle_domains, bundle_topics, "
-        "topic_vocab, bundle_responses, duplicate_pairs CASCADE"
+        "topic_vocab, bundle_responses, duplicate_pairs, bundle_relations CASCADE"
     )
     yield r
     r.close()

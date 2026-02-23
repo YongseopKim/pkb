@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from pkb.search.engine import SearchEngine
 
 
+VALID_MODES = ("explorer", "analyst", "writer")
+
+
 class ChatEngine:
     """RAG chatbot engine: question -> search -> context -> LLM -> response."""
 
@@ -24,12 +27,16 @@ class ChatEngine:
         kb: str | None = None,
         max_results: int = 5,
         max_history: int = 10,
+        mode: str = "explorer",
     ) -> None:
+        if mode not in VALID_MODES:
+            raise ValueError(f"Invalid mode '{mode}'. Must be one of {VALID_MODES}")
         self._search = search_engine
         self._router = router
         self._kb = kb
         self._max_results = max_results
         self._max_history = max_history
+        self._mode = mode
 
     def ask(self, question: str, *, session: ChatSession) -> ChatResponse:
         """Process a user question through the RAG pipeline.
@@ -55,6 +62,7 @@ class ChatEngine:
             search_results=results,
             history=history,
             max_results=self._max_results,
+            mode=self._mode,
         )
 
         # Step 3: Call LLM

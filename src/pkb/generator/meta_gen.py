@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,8 @@ from pkb.models.meta import BundleMeta, ResponseMeta
 
 if TYPE_CHECKING:
     from pkb.llm.router import LLMRouter
+
+logger = logging.getLogger(__name__)
 
 
 class MetaGenerator:
@@ -34,8 +37,7 @@ class MetaGenerator:
         """Generate metadata for a single LLM response."""
         template = load_prompt("response_meta")
         prompt = render_prompt(template, platform=platform, content=content)
-        raw = self._call_api(prompt)
-        data = self._parse_json_response(raw)
+        data = self._call_api_with_json_retry(prompt)
         data["platform"] = platform
         return ResponseMeta(**data)
 
@@ -58,8 +60,7 @@ class MetaGenerator:
             topics=", ".join(available_topics),
             response_summaries=response_summaries,
         )
-        raw = self._call_api(prompt)
-        data = self._parse_json_response(raw)
+        data = self._call_api_with_json_retry(prompt)
         return BundleMeta(**data)
 
     def _call_api(self, prompt: str) -> str:
@@ -71,6 +72,22 @@ class MetaGenerator:
             temperature=self._config.temperature,
             max_retries=self._config.max_retries,
         )
+
+    def _call_api_with_json_retry(self, prompt: str) -> dict:
+        """Call LLM API and parse JSON, with one retry on parse failure."""
+        raw = self._call_api(prompt)
+        try:
+            return self._parse_json_response(raw)
+        except ValueError:
+            logger.warning("JSON parse failed, retrying with correction prompt")
+            retry_prompt = (
+                "Your previous response was not valid JSON. "
+                "Return ONLY a JSON object with the required fields. "
+                "No explanations, no markdown, just the JSON object.\n\n"
+                f"Original prompt:\n{prompt}"
+            )
+            raw2 = self._call_api(retry_prompt)
+            return self._parse_json_response(raw2)
 
     def _parse_json_response(self, text: str) -> dict:
         """Extract JSON from LLM response, handling markdown fences."""

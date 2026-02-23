@@ -477,6 +477,198 @@ class BundleRepository:
                 (status, pair_id),
             )
 
+    # ── Bundle Relations (Knowledge Graph) ──────────────────────────
+
+    def insert_relation(
+        self,
+        source_bundle_id: str,
+        target_bundle_id: str,
+        relation_type: str,
+        score: float,
+    ) -> None:
+        """Insert a bundle relation (upsert: update score if exists)."""
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO bundle_relations
+                    (source_bundle_id, target_bundle_id, relation_type, score)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (source_bundle_id, target_bundle_id, relation_type)
+                DO UPDATE SET score = EXCLUDED.score
+                """,
+                (source_bundle_id, target_bundle_id, relation_type, score),
+            )
+
+    def list_relations(
+        self,
+        bundle_id: str,
+        relation_type: str | None = None,
+    ) -> list[dict]:
+        """List relations for a bundle (both directions)."""
+        with self._get_conn() as conn:
+            if relation_type:
+                rows = conn.execute(
+                    "SELECT id, source_bundle_id, target_bundle_id, "
+                    "relation_type, score, created_at "
+                    "FROM bundle_relations "
+                    "WHERE (source_bundle_id = %s OR target_bundle_id = %s) "
+                    "AND relation_type = %s "
+                    "ORDER BY score DESC",
+                    (bundle_id, bundle_id, relation_type),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, source_bundle_id, target_bundle_id, "
+                    "relation_type, score, created_at "
+                    "FROM bundle_relations "
+                    "WHERE source_bundle_id = %s OR target_bundle_id = %s "
+                    "ORDER BY score DESC",
+                    (bundle_id, bundle_id),
+                ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "source_bundle_id": row[1],
+                "target_bundle_id": row[2],
+                "relation_type": row[3],
+                "score": row[4],
+                "created_at": row[5],
+            }
+            for row in rows
+        ]
+
+    def delete_relations_for_bundle(self, bundle_id: str) -> int:
+        """Delete all relations involving a bundle. Returns count deleted."""
+        with self._get_conn() as conn:
+            result = conn.execute(
+                "DELETE FROM bundle_relations "
+                "WHERE source_bundle_id = %s OR target_bundle_id = %s",
+                (bundle_id, bundle_id),
+            )
+        return result.rowcount
+
+    def list_all_relations(
+        self,
+        relation_type: str | None = None,
+        kb: str | None = None,
+    ) -> list[dict]:
+        """List all relations, optionally filtered by type or KB."""
+        with self._get_conn() as conn:
+            conditions: list[str] = []
+            params: list = []
+            if relation_type:
+                conditions.append("br.relation_type = %s")
+                params.append(relation_type)
+            if kb:
+                conditions.append("(bs.kb = %s OR bt.kb = %s)")
+                params.extend([kb, kb])
+            where = "WHERE " + " AND ".join(conditions) if conditions else ""
+            rows = conn.execute(
+                f"SELECT br.id, br.source_bundle_id, br.target_bundle_id, "
+                f"br.relation_type, br.score, br.created_at "
+                f"FROM bundle_relations br "
+                f"JOIN bundles bs ON bs.id = br.source_bundle_id "
+                f"JOIN bundles bt ON bt.id = br.target_bundle_id "
+                f"{where} "
+                f"ORDER BY br.score DESC",
+                params,
+            ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "source_bundle_id": row[1],
+                "target_bundle_id": row[2],
+                "relation_type": row[3],
+                "score": row[4],
+                "created_at": row[5],
+            }
+            for row in rows
+        ]
+
+    def count_relations(self, relation_type: str | None = None) -> int:
+        """Count total relations, optionally by type."""
+        with self._get_conn() as conn:
+            if relation_type:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM bundle_relations "
+                    "WHERE relation_type = %s",
+                    (relation_type,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM bundle_relations"
+                ).fetchone()
+        return row[0] if row else 0
+
+    def find_bundles_sharing_topics(self, bundle_id: str) -> list[dict]:
+        """Find bundles that share topics with the given bundle.
+
+        Returns list of dicts: [{"bundle_id", "shared_count", "total_topics"}].
+        Excludes self. Sorted by shared_count descending.
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT bt2.bundle_id,
+                       COUNT(*) AS shared_count,
+                       (SELECT COUNT(*) FROM bundle_topics bt3
+                        WHERE bt3.bundle_id = bt2.bundle_id) AS total_topics
+                FROM bundle_topics bt1
+                JOIN bundle_topics bt2
+                    ON bt1.topic = bt2.topic AND bt2.bundle_id != bt1.bundle_id
+                WHERE bt1.bundle_id = %s
+                GROUP BY bt2.bundle_id
+                ORDER BY shared_count DESC
+                """,
+                (bundle_id,),
+            ).fetchall()
+        return [
+            {
+                "bundle_id": row[0],
+                "shared_count": row[1],
+                "total_topics": row[2],
+            }
+            for row in rows
+        ]
+
+    def list_bundles_by_domain(
+        self,
+        domain: str,
+        kb: str | None = None,
+    ) -> list[dict]:
+        """List bundles belonging to a domain, optionally filtered by KB."""
+        with self._get_conn() as conn:
+            if kb:
+                rows = conn.execute(
+                    "SELECT b.id AS bundle_id, b.kb, b.question, b.summary, "
+                    "b.created_at "
+                    "FROM bundles b "
+                    "JOIN bundle_domains bd ON bd.bundle_id = b.id "
+                    "WHERE bd.domain = %s AND b.kb = %s "
+                    "ORDER BY b.created_at DESC",
+                    (domain, kb),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT b.id AS bundle_id, b.kb, b.question, b.summary, "
+                    "b.created_at "
+                    "FROM bundles b "
+                    "JOIN bundle_domains bd ON bd.bundle_id = b.id "
+                    "WHERE bd.domain = %s "
+                    "ORDER BY b.created_at DESC",
+                    (domain,),
+                ).fetchall()
+        return [
+            {
+                "bundle_id": row[0],
+                "kb": row[1],
+                "question": row[2],
+                "summary": row[3],
+                "created_at": row[4],
+            }
+            for row in rows
+        ]
+
     def find_by_source_path(self, source_path: str) -> str | None:
         """Find a bundle ID by its source file path.
 
@@ -587,6 +779,122 @@ class BundleRepository:
                    WHERE id = %s""",
                 (bundle_id, bundle_id),
             )
+
+    # ─── Analytics aggregates ──────────────────────────────
+
+    def count_bundles_by_domain(self, kb: str | None = None) -> list[dict]:
+        """Count bundles per domain, ordered by count descending."""
+        with self._get_conn() as conn:
+            if kb:
+                rows = conn.execute(
+                    "SELECT bd.domain, COUNT(*) AS cnt "
+                    "FROM bundle_domains bd "
+                    "JOIN bundles b ON b.id = bd.bundle_id "
+                    "WHERE b.kb = %s "
+                    "GROUP BY bd.domain ORDER BY cnt DESC",
+                    (kb,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT domain, COUNT(*) AS cnt "
+                    "FROM bundle_domains "
+                    "GROUP BY domain ORDER BY cnt DESC",
+                ).fetchall()
+        return [{"domain": row[0], "count": row[1]} for row in rows]
+
+    def count_bundles_by_topic(self, kb: str | None = None) -> list[dict]:
+        """Count bundles per topic, ordered by count descending."""
+        with self._get_conn() as conn:
+            if kb:
+                rows = conn.execute(
+                    "SELECT bt.topic, COUNT(*) AS cnt "
+                    "FROM bundle_topics bt "
+                    "JOIN bundles b ON b.id = bt.bundle_id "
+                    "WHERE b.kb = %s "
+                    "GROUP BY bt.topic ORDER BY cnt DESC",
+                    (kb,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT topic, COUNT(*) AS cnt "
+                    "FROM bundle_topics "
+                    "GROUP BY topic ORDER BY cnt DESC",
+                ).fetchall()
+        return [{"topic": row[0], "count": row[1]} for row in rows]
+
+    def count_bundles_by_month(
+        self, kb: str | None = None, months: int = 6,
+    ) -> list[dict]:
+        """Count bundles per month for the last N months."""
+        with self._get_conn() as conn:
+            if kb:
+                rows = conn.execute(
+                    "SELECT TO_CHAR(created_at, 'YYYY-MM') AS month, "
+                    "COUNT(*) AS cnt FROM bundles "
+                    "WHERE created_at >= NOW() - make_interval(months => %s) "
+                    "AND kb = %s "
+                    "GROUP BY month ORDER BY month",
+                    (months, kb),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT TO_CHAR(created_at, 'YYYY-MM') AS month, "
+                    "COUNT(*) AS cnt FROM bundles "
+                    "WHERE created_at >= NOW() - make_interval(months => %s) "
+                    "GROUP BY month ORDER BY month",
+                    (months,),
+                ).fetchall()
+        return [{"month": row[0], "count": row[1]} for row in rows]
+
+    def count_responses_by_platform(self, kb: str | None = None) -> list[dict]:
+        """Count responses per platform, ordered by count descending."""
+        with self._get_conn() as conn:
+            if kb:
+                rows = conn.execute(
+                    "SELECT br.platform, COUNT(*) AS cnt "
+                    "FROM bundle_responses br "
+                    "JOIN bundles b ON b.id = br.bundle_id "
+                    "WHERE b.kb = %s "
+                    "GROUP BY br.platform ORDER BY cnt DESC",
+                    (kb,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT platform, COUNT(*) AS cnt "
+                    "FROM bundle_responses "
+                    "GROUP BY platform ORDER BY cnt DESC",
+                ).fetchall()
+        return [{"platform": row[0], "count": row[1]} for row in rows]
+
+    def list_bundles_since(
+        self, since: datetime, kb: str | None = None,
+    ) -> list[dict]:
+        """List bundles created since the given datetime."""
+        with self._get_conn() as conn:
+            if kb:
+                rows = conn.execute(
+                    "SELECT id, kb, question, summary, created_at "
+                    "FROM bundles WHERE created_at >= %s AND kb = %s "
+                    "ORDER BY created_at DESC",
+                    (since, kb),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, kb, question, summary, created_at "
+                    "FROM bundles WHERE created_at >= %s "
+                    "ORDER BY created_at DESC",
+                    (since,),
+                ).fetchall()
+        return [
+            {
+                "bundle_id": row[0],
+                "kb": row[1],
+                "question": row[2],
+                "summary": row[3],
+                "created_at": row[4],
+            }
+            for row in rows
+        ]
 
     def close(self) -> None:
         """Close the database connection or pool."""

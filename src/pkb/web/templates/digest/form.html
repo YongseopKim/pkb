@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}PKB — Digest{% endblock %}
+{% block content %}
+<h1>Knowledge Digest</h1>
+<p>Generate a comprehensive summary of accumulated knowledge by topic or domain.</p>
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+<form method="post" action="/digest">
+    <div class="search-form">
+        <input type="text" name="topic" placeholder="Topic (e.g. python, 투자)">
+        <input type="text" name="domain" placeholder="Domain (e.g. dev, 재테크)">
+        <input type="text" name="kb" placeholder="KB name (optional)">
+        <button type="submit">Generate Digest</button>
+    </div>
+</form>
+{% endblock %}
