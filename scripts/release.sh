@@ -12,7 +12,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYPROJECT="$REPO_ROOT/pyproject.toml"
-DIST_DIR="$REPO_ROOT/dist"
+BUILD_SCRIPT="$REPO_ROOT/scripts/build.sh"
 
 # ── Resolve Python (prefer .venv) ────────────────────────
 VENV_PYTHON="$REPO_ROOT/.venv/bin/python"
@@ -75,27 +75,8 @@ p.write_text(text)
 "
     echo "Updated $PYPROJECT"
 else
-    new_version="$current_version"
     echo "No bump requested, building current version."
 fi
 
-# ── Clean dist/ ───────────────────────────────────────────
-if [ -d "$DIST_DIR" ]; then
-    rm -rf "$DIST_DIR"
-    echo "Cleaned dist/"
-fi
-
-# ── Build ─────────────────────────────────────────────────
-echo ""
-echo "Building pkb $new_version ..."
-$PYTHON -m build "$REPO_ROOT" --outdir "$DIST_DIR"
-
-# ── Summary ───────────────────────────────────────────────
-echo ""
-echo "═══════════════════════════════════════════"
-echo "  Build complete: pkb $new_version"
-echo "═══════════════════════════════════════════"
-ls -lh "$DIST_DIR/"
-echo ""
-echo "Install with:"
-echo "  pip install $DIST_DIR/pkb-${new_version}-py3-none-any.whl"
+# ── Build ────────────────────────────────────────────────
+exec "$BUILD_SCRIPT"
