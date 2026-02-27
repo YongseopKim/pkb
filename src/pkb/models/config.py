@@ -126,6 +126,22 @@ class ConcurrencyConfig(BaseModel):
     retry_interval: float = 300.0  # seconds; 0 to disable periodic retry
 
 
+class PostIngestConfig(BaseModel):
+    """Post-ingest 자동 파이프라인 설정."""
+
+    auto_relate: bool = True
+    auto_dedup: bool = True
+    gap_update: bool = True
+
+
+class SchedulerConfig(BaseModel):
+    """주기적 자동 작업 설정."""
+
+    weekly_digest: bool = True
+    monthly_report: bool = True
+    gap_threshold: int = 3
+
+
 class LLMModelEntry(BaseModel):
     """A model entry with tier assignment.
 
@@ -172,4 +188,6 @@ class PKBConfig(BaseModel):
     relations: RelationConfig = RelationConfig()
     digest: DigestConfig = DigestConfig()
     concurrency: ConcurrencyConfig = ConcurrencyConfig()
+    post_ingest: PostIngestConfig = PostIngestConfig()
+    scheduler: SchedulerConfig = SchedulerConfig()
     llm: LLMConfig | None = None

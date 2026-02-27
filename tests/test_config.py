@@ -15,7 +15,9 @@ from pkb.models.config import (
     LLMRoutingConfig,
     MetaLLMConfig,
     PKBConfig,
+    PostIngestConfig,
     RelationConfig,
+    SchedulerConfig,
 )
 
 
@@ -263,3 +265,73 @@ class TestInitPkbHome:
 
         init_pkb_home(force=True)
         assert (pkb_home / "vocab" / "domains.yaml").is_file()
+
+
+class TestPostIngestConfig:
+    def test_post_ingest_config_defaults(self):
+        config = PostIngestConfig()
+        assert config.auto_relate is True
+        assert config.auto_dedup is True
+        assert config.gap_update is True
+
+    def test_post_ingest_config_custom_values(self):
+        config = PostIngestConfig(auto_relate=False, auto_dedup=True, gap_update=False)
+        assert config.auto_relate is False
+        assert config.auto_dedup is True
+        assert config.gap_update is False
+
+
+class TestSchedulerConfig:
+    def test_scheduler_config_defaults(self):
+        config = SchedulerConfig()
+        assert config.weekly_digest is True
+        assert config.monthly_report is True
+        assert config.gap_threshold == 3
+
+    def test_scheduler_config_custom_values(self):
+        config = SchedulerConfig(weekly_digest=False, monthly_report=False, gap_threshold=5)
+        assert config.weekly_digest is False
+        assert config.monthly_report is False
+        assert config.gap_threshold == 5
+
+
+class TestPKBConfigPhase8:
+    def test_pkb_config_includes_post_ingest_and_scheduler(self):
+        config = PKBConfig()
+        assert hasattr(config, "post_ingest")
+        assert isinstance(config.post_ingest, PostIngestConfig)
+        assert config.post_ingest.auto_relate is True
+        assert config.post_ingest.auto_dedup is True
+        assert config.post_ingest.gap_update is True
+        assert hasattr(config, "scheduler")
+        assert isinstance(config.scheduler, SchedulerConfig)
+        assert config.scheduler.weekly_digest is True
+        assert config.scheduler.monthly_report is True
+        assert config.scheduler.gap_threshold == 3
+
+    def test_load_config_with_post_ingest(self, tmp_path: Path):
+        """Loading config.yaml with post_ingest and scheduler sections."""
+        config_data = {
+            "knowledge_bases": [],
+            "post_ingest": {
+                "auto_relate": False,
+                "auto_dedup": True,
+                "gap_update": False,
+            },
+            "scheduler": {
+                "weekly_digest": False,
+                "gap_threshold": 5,
+            },
+        }
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            yaml.dump(config_data, allow_unicode=True, default_flow_style=False),
+            encoding="utf-8",
+        )
+        config = load_config(config_path)
+        assert config.post_ingest.auto_relate is False
+        assert config.post_ingest.auto_dedup is True
+        assert config.post_ingest.gap_update is False
+        assert config.scheduler.weekly_digest is False
+        assert config.scheduler.monthly_report is True  # default
+        assert config.scheduler.gap_threshold == 5
