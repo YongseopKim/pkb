@@ -54,7 +54,7 @@ class EmbeddingConfig(BaseModel):
     dimensions: int = 1024
     tei_url: str = "http://localhost:8090"
     tei_batch_size: int = 32
-    tei_timeout: float = 30.0
+    tei_timeout: float = 120.0
 
 
 class PostgresConfig(BaseModel):

@@ -30,7 +30,7 @@ class TestEmbeddingConfigDefaults:
 
     def test_default_tei_timeout(self):
         config = EmbeddingConfig()
-        assert config.tei_timeout == 30.0
+        assert config.tei_timeout == 120.0
 
     def test_chunk_size_and_overlap_defaults(self):
         config = EmbeddingConfig()
