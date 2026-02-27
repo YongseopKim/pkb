@@ -75,6 +75,7 @@ pkb/                          <- This repo (tool)
 - **VectorDB**: ChromaDB (remote). Embedding: server-side (default) or client-side via TEI (bge-m3, 1024d)
 - **Viewer**: Obsidian with Dataview plugin
 - **Bundle ID**: `{YYYYMMDD}-{slug}-{hash4}` (e.g., `20260221-pkb-system-design-a3f2`)
+- **Stable ID**: SHA-256 of normalized URL (primary) or initial turns fingerprint (fallback). Enables file relocation tracking, content update detection, and dedup. Same stable_id + same platform → UPDATE (re-run LLM, refresh DB/ChromaDB). Same stable_id + different platform → MERGE.
 - **Tag system**: 2-tier — Domain (L1, 8 fixed) + Topic (L2, controlled vocab with pending workflow)
 - **API keys**: Priority env var > config.yaml `api_key` > SDK default. `PKB_DB_PASSWORD` for DB.
 
@@ -139,6 +140,8 @@ pkb db current                    # Show current DB revision
 pkb db history                    # Show migration history
 pkb db stamp head                 # Stamp revision without running SQL
 pkb db migrate-domain <old> <new> # Rename domain in bundle_domains
+pkb db migrate-stable-id         # Recompute stable_id from raw files
+pkb db migrate-stable-id --dry-run  # Preview without writing
 pkb kb list                       # List configured KBs with bundle counts
 pkb doctor                        # System diagnostics (DB, ChromaDB, LLM API health)
 pkb doctor --skip-llm             # Skip LLM API checks
@@ -304,8 +307,11 @@ Schema is managed by Alembic migrations in `src/pkb/db/migrations/versions/`. Ra
 - `0002_add_source_path` — `bundles.source_path` column + index
 - `0003_add_source_path_to_responses` — `bundle_responses.source_path` column + index (per-platform file tracking for merged bundles)
 - `0004_bundle_relations` — `bundle_relations` table + indexes (knowledge graph edges)
+- `0005_add_stable_id` — `bundles.stable_id` column (NOT NULL, UNIQUE) + backfill from question_hash
 
 **Source path tracking**: `bundles.source_path` stores the first-ingested file path. `bundle_responses.source_path` stores per-platform file paths (important for merged bundles). `find_by_source_path()` checks `bundle_responses` first, then falls back to `bundles`.
+
+**Stable ID**: `bundles.stable_id` is the primary dedup key. Computed as SHA-256 of normalized URL (strip query/fragment, lowercase hostname) or first-5-turns fingerprint (fallback for URL-less exports). `find_bundle_by_stable_id()` replaces `find_bundle_by_question_hash()` for dedup. `question_hash` column is kept for backward compatibility but deprecated.
 
 **Existing DB auto-stamp**: If `bundles` table exists but `alembic_version` doesn't, `pkb db upgrade` auto-stamps at head (no SQL re-run).
 
