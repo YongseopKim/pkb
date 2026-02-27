@@ -504,7 +504,8 @@ CREATE TABLE bundles (
     has_synthesis BOOLEAN DEFAULT FALSE,
     meta_version INTEGER DEFAULT 1,
     path TEXT NOT NULL,
-    question_hash TEXT,                 -- SHA-256 for dedup
+    question_hash TEXT,                 -- SHA-256 for dedup (deprecated, kept for compat)
+    stable_id TEXT NOT NULL,            -- SHA-256 of normalized URL or turn fingerprint
     source_path TEXT,                   -- 원본 파일 경로 (reingest 추적)
     tsv tsvector                        -- FTS 자동 생성
 );
@@ -512,6 +513,7 @@ CREATE TABLE bundles (
 CREATE INDEX idx_bundles_tsv ON bundles USING GIN (tsv);
 CREATE INDEX idx_bundles_kb ON bundles (kb);
 CREATE INDEX idx_bundles_question_hash ON bundles (question_hash);
+CREATE UNIQUE INDEX idx_bundles_stable_id ON bundles (stable_id);
 CREATE INDEX idx_bundles_source_path ON bundles (source_path);
 
 -- Domain 매핑 (L1, M:N)
@@ -872,6 +874,20 @@ sequenceDiagram
 | 7.3 | pkb stats / pkb report CLI | ✅ |
 | 7.4 | 웹 대시보드 (/analytics, Chart.js, 5 JSON API endpoints) | ✅ |
 | 7.5 | pkb doctor (시스템 진단: DB, ChromaDB, LLM API 상태) | ✅ |
+
+### Stable ID: 불변 대화 식별자 ✅ 완료
+
+> URL 기반 SHA-256 (우선) 또는 초반 5턴 지문 (fallback)으로 대화를 고유 식별. 파일 이동 추적, 내용 변경 감지, 중복 방지를 통합 해결. question_hash 기반 SKIP 동작을 stable_id 기반 UPDATE로 전환. 1046 tests.
+
+| # | 액션 아이템 | 상태 |
+|---|-----------|------|
+| S.1 | `compute_stable_id()`, `_normalize_url()` (URL 정규화 + 턴 지문) | ✅ |
+| S.2 | Alembic migration 0005 (`stable_id` NOT NULL + UNIQUE, question_hash에서 백필) | ✅ |
+| S.3 | `find_bundle_by_stable_id()`, `upsert_bundle` stable_id 지원 | ✅ |
+| S.4 | Ingest 리팩터: SKIP→UPDATE (같은 플랫폼), MERGE (다른 플랫폼), 멀티 플랫폼 보존 | ✅ |
+| S.5 | Watch 모드 단순화 (manual delete+reingest 제거) | ✅ |
+| S.6 | Regenerate에 stable_id 전달 | ✅ |
+| S.7 | `pkb db migrate-stable-id` CLI 커맨드 | ✅ |
 
 ---
 

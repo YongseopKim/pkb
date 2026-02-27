@@ -45,7 +45,7 @@ pkb/                          <- This repo (tool)
 │   ├── chat/                 <- RAG chatbot engine (ChatEngine, context assembly)
 │   ├── web/                  <- FastAPI web UI (htmx, Jinja2 templates)
 │   └── data/                 <- Bundled seed data (domains, topics)
-├── tests/                    <- 1024 tests (968 mock + 56 integration)
+├── tests/                    <- 1046 tests (985 mock + 61 integration)
 ├── prompts/                  <- LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 └── pyproject.toml
 
@@ -249,7 +249,7 @@ concurrency:                      # Optional, all fields have defaults
 ## Repository Contents
 
 - `src/pkb/` — Python package (Phase 0 through 7 implemented)
-- `tests/` — 1024 tests (968 mock + 56 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, reembed, watcher, dedup, LLM routing, embedding, web, chat, kb, relations, digest, MCP server, analytics, doctor
+- `tests/` — 1046 tests (985 mock + 61 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, reembed, watcher, dedup, LLM routing, embedding, web, chat, kb, relations, digest, MCP server, analytics, doctor, stable_id
 - `docker/` — Docker Compose for local test DB (PostgreSQL + ChromaDB)
 - `prompts/` — LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 - `docs/design-v1.md` — **Unified design document**. Single source of truth.
