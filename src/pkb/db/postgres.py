@@ -847,6 +847,25 @@ class BundleRepository:
 
     # ─── Analytics aggregates ──────────────────────────────
 
+    def count_bundles_for_topics(self, topics: list[str]) -> dict[str, int]:
+        """Count bundles for specific topics.
+
+        Returns a dict mapping topic name to its bundle count.
+        Topics with 0 bundles are omitted from the result.
+        Empty input returns empty dict.
+        """
+        if not topics:
+            return {}
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT topic, COUNT(DISTINCT bundle_id) AS cnt "
+                "FROM bundle_topics "
+                "WHERE topic = ANY(%(topics)s) "
+                "GROUP BY topic",
+                {"topics": topics},
+            ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
     def count_bundles_by_domain(self, kb: str | None = None) -> list[dict]:
         """Count bundles per domain, ordered by count descending."""
         with self._get_conn() as conn:

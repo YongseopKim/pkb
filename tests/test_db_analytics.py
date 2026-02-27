@@ -183,3 +183,56 @@ class TestListBundlesSince:
         mock_conn.execute.return_value.fetchall.return_value = []
         result = repo.list_bundles_since(ts)
         assert result == []
+
+
+# ─── count_bundles_for_topics ───────────────────────────
+
+class TestCountBundlesForTopics:
+    def test_method_exists(self, repo):
+        assert hasattr(repo, "count_bundles_for_topics")
+
+    def test_returns_dict_mapping_topic_to_count(self, repo, mock_conn):
+        mock_conn.execute.return_value.fetchall.return_value = [
+            ("python", 10),
+            ("docker", 3),
+        ]
+        result = repo.count_bundles_for_topics(["python", "docker", "rust"])
+        assert result == {"python": 10, "docker": 3}
+
+    def test_empty_input_returns_empty_dict(self, repo, mock_conn):
+        result = repo.count_bundles_for_topics([])
+        assert result == {}
+        # Should not execute any SQL query for empty input
+        mock_conn.execute.assert_not_called()
+
+    def test_sql_uses_any_parameter(self, repo, mock_conn):
+        mock_conn.execute.return_value.fetchall.return_value = [("python", 5)]
+        repo.count_bundles_for_topics(["python", "docker"])
+        sql, params = mock_conn.execute.call_args[0]
+        assert "ANY" in sql
+        assert "bundle_topics" in sql
+        assert "COUNT" in sql
+        assert "GROUP BY" in sql
+        expected = ["python", "docker"]
+        assert expected in params.values() or params.get("topics") == expected
+
+    def test_omits_zero_count_topics(self, repo, mock_conn):
+        """Topics with 0 bundles should not appear in the result."""
+        mock_conn.execute.return_value.fetchall.return_value = [
+            ("python", 5),
+        ]
+        result = repo.count_bundles_for_topics(["python", "nonexistent"])
+        # "nonexistent" has no rows in the DB, so it won't appear in result
+        assert "nonexistent" not in result
+        assert result == {"python": 5}
+
+    def test_single_topic(self, repo, mock_conn):
+        mock_conn.execute.return_value.fetchall.return_value = [("ai", 7)]
+        result = repo.count_bundles_for_topics(["ai"])
+        assert result == {"ai": 7}
+
+    def test_empty_db_result(self, repo, mock_conn):
+        """All queried topics have 0 bundles."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        result = repo.count_bundles_for_topics(["unknown1", "unknown2"])
+        assert result == {}
