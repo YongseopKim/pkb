@@ -1476,3 +1476,10 @@ class TestComputeStableId:
 
         assert len(sid) == 64
         assert all(c in "0123456789abcdef" for c in sid)
+
+    def test_empty_url_string_uses_turn_fallback(self):
+        """url이 빈 문자열이면 turn 기반 fallback 사용."""
+        turns = self._make_turns(3)
+        conv_empty_url = self._make_conv(url="", turns=turns)
+        conv_none_url = self._make_conv(url=None, turns=turns)
+        assert compute_stable_id(conv_empty_url) == compute_stable_id(conv_none_url)

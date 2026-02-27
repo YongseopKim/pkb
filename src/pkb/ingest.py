@@ -109,8 +109,7 @@ def _normalize_url(url: str) -> str:
     - Preserve path case (conversation IDs are case-sensitive)
     """
     parsed = urlparse(url)
-    # scheme and netloc are lowercased by urlparse for scheme,
-    # but netloc needs explicit lowering
+    # urlparse preserves case; explicitly lowercase scheme and netloc
     scheme = parsed.scheme.lower()
     netloc = parsed.netloc.lower()
     path = parsed.path.rstrip("/")
