@@ -165,16 +165,16 @@ class IngestPipeline:
         self._domains = domains
         self._topics = topics
         self._dry_run = dry_run
-        # Per-question_hash locks to prevent TOCTOU race in concurrent ingest
+        # Per-stable_id locks to prevent TOCTOU race in concurrent ingest
         self._hash_locks: dict[str, threading.Lock] = {}
         self._hash_locks_mutex = threading.Lock()
 
-    def _get_hash_lock(self, question_hash: str) -> threading.Lock:
-        """Get or create a per-question_hash lock for concurrent dedup safety."""
+    def _get_stable_lock(self, stable_id: str) -> threading.Lock:
+        """Get or create a per-stable_id lock for concurrent dedup safety."""
         with self._hash_locks_mutex:
-            if question_hash not in self._hash_locks:
-                self._hash_locks[question_hash] = threading.Lock()
-            return self._hash_locks[question_hash]
+            if stable_id not in self._hash_locks:
+                self._hash_locks[stable_id] = threading.Lock()
+            return self._hash_locks[stable_id]
 
     def ingest_file(self, file_path: Path, *, force: bool = False) -> dict | None:
         """Ingest a single input file (JSONL or MD) into the knowledge base.
@@ -184,9 +184,10 @@ class IngestPipeline:
             force: If True, bypass dedup check (for re-ingesting modified files).
 
         Returns:
-            Dict with bundle_id and metadata, or None if duplicate.
-            If merged into existing bundle, dict includes "merged": True.
-            Skip dict with "status" key starting with "skip_" for graceful skips.
+            Dict with bundle_id and metadata.
+            If updated (same stable_id + platform): dict includes "updated": True.
+            If merged (same stable_id, diff platform): dict includes "merged": True.
+            Skip dict with "status" key for graceful skips (skip_*).
         """
         from pkb.parser.exceptions import ParseError
 
@@ -198,6 +199,7 @@ class IngestPipeline:
             return {"status": "skip_parse_error", "reason": str(e)}
 
         question, question_hash = compute_question_hash(conv)
+        stable_id = compute_stable_id(conv)
 
         # 1b. Content minimum validation
         total_content = sum(
@@ -213,15 +215,18 @@ class IngestPipeline:
                 "reason": f"Content too short ({total_content} chars)",
             }
 
-        # 2. Dedup / merge check with per-hash lock (skipped when force=True or dry_run)
+        # 2. Dedup / merge / update check with per-stable_id lock
+        #    (skipped when force=True or dry_run)
         if not force and not self._dry_run:
-            lock = self._get_hash_lock(question_hash)
+            lock = self._get_stable_lock(stable_id)
             with lock:
                 return self._dedup_and_ingest(
-                    file_path, conv, question, question_hash,
+                    file_path, conv, question, question_hash, stable_id,
                 )
 
-        return self._create_new_bundle(file_path, conv, question, question_hash)
+        return self._create_new_bundle(
+            file_path, conv, question, question_hash, stable_id,
+        )
 
     def _dedup_and_ingest(
         self,
@@ -229,17 +234,139 @@ class IngestPipeline:
         conv: Conversation,
         question: str,
         question_hash: str,
+        stable_id: str,
     ) -> dict | None:
-        """Check for duplicates and either skip, merge, or create new bundle.
+        """Check for duplicates and either update, merge, or create new bundle.
 
-        Must be called under the per-question_hash lock.
+        Must be called under the per-stable_id lock.
+
+        - Same stable_id + same platform → UPDATE (re-run LLM, refresh DB/ChromaDB)
+        - Same stable_id + different platform → MERGE (add platform to bundle)
+        - No match → CREATE new bundle
         """
-        existing = self._repo.find_bundle_by_question_hash(question_hash)
+        existing = self._repo.find_bundle_by_stable_id(stable_id)
         if existing is not None:
             if conv.meta.platform in existing["platforms"]:
-                return None  # Same platform, same question → SKIP
+                return self._update_existing_bundle(
+                    file_path, conv, existing, question, question_hash, stable_id,
+                )
             return self.merge_file(file_path, conv, existing)
-        return self._create_new_bundle(file_path, conv, question, question_hash)
+        return self._create_new_bundle(
+            file_path, conv, question, question_hash, stable_id,
+        )
+
+    def _update_existing_bundle(
+        self,
+        file_path: Path,
+        conv: Conversation,
+        existing_bundle: dict,
+        question: str,
+        question_hash: str,
+        stable_id: str,
+    ) -> dict:
+        """Update an existing bundle when same stable_id + same platform.
+
+        Re-runs LLM for response_meta and bundle_meta, regenerates derived files
+        (MD, _bundle.md), refreshes DB via upsert_bundle (ON CONFLICT UPDATE),
+        and refreshes ChromaDB (delete old chunks + upsert new).
+
+        All LLM calls happen before any disk writes to prevent partial state.
+        """
+        bundle_id = existing_bundle["bundle_id"]
+        bundle_dir = self._kb_path / "bundles" / bundle_id
+        raw_dir = bundle_dir / "_raw"
+
+        logger.info(
+            "Updating bundle %s from %s (platform=%s)",
+            bundle_id, file_path.name, conv.meta.platform,
+        )
+
+        # 1. Build response summaries and validate
+        response_summaries = self._build_response_summaries(conv)
+        if len(response_summaries.strip()) < MIN_CONTENT_LENGTH:
+            logger.warning(
+                "Response summaries too short (%d chars), skipping update %s",
+                len(response_summaries.strip()), file_path.name,
+            )
+            return {
+                "status": "skip_insufficient_content",
+                "reason": "Response summaries too short",
+            }
+
+        # 2. LLM: Generate bundle meta
+        bundle_meta = self._meta_gen.generate_bundle_meta(
+            question=question,
+            platforms=[conv.meta.platform],
+            response_summaries=response_summaries,
+            available_domains=self._domains,
+            available_topics=self._topics,
+        )
+
+        # 3. LLM: Generate response meta (before disk writes)
+        response_meta = self._meta_gen.generate_response_meta(
+            platform=conv.meta.platform,
+            content=self._get_assistant_content(conv),
+        )
+
+        # 4. Disk writes: copy raw + write MD files
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(file_path, raw_dir / file_path.name)
+
+        frontmatter = response_meta.model_dump()
+        md_path = bundle_dir / f"{conv.meta.platform}.md"
+        write_md_file(conv, bundle_id, frontmatter, md_path)
+
+        self._write_bundle_md(bundle_dir, bundle_id, bundle_meta, conv)
+
+        # 5. DB: upsert_bundle with existing bundle_id (ON CONFLICT UPDATE)
+        if not self._dry_run:
+            self._repo.upsert_bundle(
+                bundle_id=bundle_id,
+                kb=self._kb_name,
+                question=question,
+                summary=bundle_meta.summary,
+                created_at=conv.meta.exported_at,
+                response_count=self._count_responses(conv),
+                path=f"bundles/{bundle_id}",
+                question_hash=question_hash,
+                stable_id=stable_id,
+                domains=bundle_meta.domains,
+                topics=bundle_meta.topics,
+                pending_topics=bundle_meta.pending_topics,
+                responses=[{
+                    "platform": conv.meta.platform,
+                    "model": response_meta.model,
+                    "turn_count": conv.turn_count,
+                    "source_path": str(file_path),
+                }],
+                source_path=str(file_path),
+            )
+
+            # 6. ChromaDB: delete old chunks, then upsert new
+            self._chunk_store.delete_by_bundle_id(bundle_id)
+
+            full_text = conversation_to_markdown(conv, bundle_id)
+            chunks = chunk_text(full_text)
+            chunk_data = prepare_chunks_for_chromadb(
+                chunks,
+                metadata={
+                    "bundle_id": bundle_id,
+                    "kb": self._kb_name,
+                    "platform": conv.meta.platform,
+                    "domains": ",".join(bundle_meta.domains),
+                    "topics": ",".join(bundle_meta.topics),
+                },
+            )
+            self._chunk_store.upsert_chunks(chunk_data)
+
+        return {
+            "bundle_id": bundle_id,
+            "platform": conv.meta.platform,
+            "updated": True,
+            "summary": bundle_meta.summary,
+            "domains": bundle_meta.domains,
+            "topics": bundle_meta.topics,
+        }
 
     def _create_new_bundle(
         self,
@@ -247,6 +374,7 @@ class IngestPipeline:
         conv: Conversation,
         question: str,
         question_hash: str,
+        stable_id: str | None = None,
     ) -> dict:
         """Create a new bundle from a parsed conversation.
 
@@ -316,6 +444,7 @@ class IngestPipeline:
                 response_count=self._count_responses(conv),
                 path=f"bundles/{bundle_id}",
                 question_hash=question_hash,
+                stable_id=stable_id,
                 domains=bundle_meta.domains,
                 topics=bundle_meta.topics,
                 pending_topics=bundle_meta.pending_topics,
@@ -356,14 +485,14 @@ class IngestPipeline:
     ) -> dict:
         """Merge a new platform file into an existing bundle.
 
-        Called when the same question_hash exists but with a different platform.
+        Called when the same stable_id exists but with a different platform.
         Adds raw file, generates platform MD, regenerates _bundle.md with all
         platforms, and updates DB/ChromaDB.
 
         Args:
             file_path: Path to the new input file.
             conv: Parsed Conversation from the new file.
-            existing_bundle: Dict from find_bundle_by_question_hash().
+            existing_bundle: Dict from find_bundle_by_stable_id().
 
         Returns:
             Dict with bundle_id, platform, merged=True, and updated metadata.

@@ -308,7 +308,7 @@ class TestIngestPipeline:
     def mock_deps(self, tmp_path):
         """Create mocked dependencies for IngestPipeline."""
         repo = MagicMock()
-        repo.find_bundle_by_question_hash.return_value = None  # no existing bundle
+        repo.find_bundle_by_stable_id.return_value = None  # no existing bundle
         chunk_store = MagicMock()
         meta_gen = MagicMock()
         meta_gen.generate_response_meta.return_value = MagicMock(
@@ -401,19 +401,26 @@ class TestIngestPipeline:
         # ChunkStore should have been called
         mock_deps["chunk_store"].upsert_chunks.assert_called_once()
 
-    def test_skip_duplicate(self, pipeline, sample_jsonl, mock_deps):
-        # Same platform (claude) in existing bundle → SKIP
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = {
-            "bundle_id": "20260221-existing-a3f2",
+    def test_update_same_platform_duplicate(self, pipeline, sample_jsonl, mock_deps):
+        # Same platform (claude) in existing bundle → UPDATE (not SKIP)
+        bundle_id = "20260221-existing-a3f2"
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = {
+            "bundle_id": bundle_id,
             "kb": "test",
-            "path": "bundles/20260221-existing-a3f2",
+            "path": f"bundles/{bundle_id}",
             "platforms": ["claude"],
             "domains": ["dev"],
             "topics": ["python"],
         }
+        # Create existing bundle dir for update to write into
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        (bundle_dir / "_raw").mkdir(parents=True)
+
         result = pipeline.ingest_file(sample_jsonl)
-        assert result is None  # Skipped
-        mock_deps["repo"].upsert_bundle.assert_not_called()
+        assert result is not None
+        assert result.get("updated") is True
+        assert result["bundle_id"] == bundle_id
+        mock_deps["repo"].upsert_bundle.assert_called_once()
 
     def test_creates_bundle_directory(self, pipeline, sample_jsonl, mock_deps):
         result = pipeline.ingest_file(sample_jsonl)
@@ -435,7 +442,7 @@ class TestIngestPipeline:
 
     def test_force_bypasses_dedup(self, pipeline, sample_jsonl, mock_deps):
         """force=True이면 question_hash 중복이어도 ingest 진행."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = {
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = {
             "bundle_id": "20260221-existing-a3f2",
             "kb": "test",
             "path": "bundles/20260221-existing-a3f2",
@@ -465,18 +472,24 @@ class TestIngestPipeline:
         assert "source_path" in responses[0]
         assert responses[0]["source_path"] == str(sample_jsonl)
 
-    def test_force_false_default_skips_duplicate(self, pipeline, sample_jsonl, mock_deps):
-        """force 기본값 False: 기존 동작과 동일하게 중복 시 None."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = {
-            "bundle_id": "20260221-existing-a3f2",
+    def test_force_false_default_updates_duplicate(self, pipeline, sample_jsonl, mock_deps):
+        """force 기본값 False: 같은 stable_id + 같은 플랫폼이면 UPDATE."""
+        bundle_id = "20260221-existing-a3f2"
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = {
+            "bundle_id": bundle_id,
             "kb": "test",
-            "path": "bundles/20260221-existing-a3f2",
+            "path": f"bundles/{bundle_id}",
             "platforms": ["claude"],
             "domains": ["dev"],
             "topics": ["python"],
         }
+        # Create existing bundle dir
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        (bundle_dir / "_raw").mkdir(parents=True)
+
         result = pipeline.ingest_file(sample_jsonl)
-        assert result is None
+        assert result is not None
+        assert result.get("updated") is True
 
     def test_dry_run_no_side_effects(self, mock_deps, sample_jsonl):
         pipeline = IngestPipeline(
@@ -502,7 +515,7 @@ class TestBundleMdNoQuestion:
     @pytest.fixture
     def mock_deps(self, tmp_path):
         repo = MagicMock()
-        repo.find_bundle_by_question_hash.return_value = None
+        repo.find_bundle_by_stable_id.return_value = None
         chunk_store = MagicMock()
         meta_gen = MagicMock()
         meta_gen.generate_bundle_meta.return_value = MagicMock(
@@ -574,7 +587,7 @@ class TestOrphanDirectoryPrevention:
     @pytest.fixture
     def mock_deps(self, tmp_path):
         repo = MagicMock()
-        repo.find_bundle_by_question_hash.return_value = None
+        repo.find_bundle_by_stable_id.return_value = None
         chunk_store = MagicMock()
         meta_gen = MagicMock()
         meta_gen.generate_bundle_meta.return_value = MagicMock(
@@ -672,7 +685,7 @@ class TestMergeFile:
     def mock_deps(self, tmp_path):
         """Create mocked dependencies for IngestPipeline."""
         repo = MagicMock()
-        repo.find_bundle_by_question_hash.return_value = None
+        repo.find_bundle_by_stable_id.return_value = None
         chunk_store = MagicMock()
         meta_gen = MagicMock()
         meta_gen.generate_response_meta.return_value = MagicMock(
@@ -794,8 +807,8 @@ class TestMergeFile:
 
     def test_merge_different_platform(self, pipeline, chatgpt_jsonl, existing_bundle, mock_deps):
         """같은 질문 + 다른 플랫폼 → merge_file 호출, merged=True."""
-        # ingest_file에서 find_bundle_by_question_hash가 기존 번들 반환하도록 설정
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = existing_bundle
+        # ingest_file에서 find_bundle_by_stable_id가 기존 번들 반환하도록 설정
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle
 
         result = pipeline.ingest_file(chatgpt_jsonl)
 
@@ -803,17 +816,23 @@ class TestMergeFile:
         assert result.get("merged") is True
         assert result["platform"] == "chatgpt"
 
-    def test_skip_same_platform_same_question(self, pipeline, mock_deps, tmp_path):
-        """같은 질문 + 같은 플랫폼 → None (진짜 SKIP)."""
+    def test_update_same_platform_same_stable_id(self, pipeline, mock_deps, tmp_path):
+        """같은 질문 + 같은 플랫폼 → UPDATE (updated=True)."""
+        bundle_id = "20260221-test-a3f2"
         existing = {
-            "bundle_id": "20260221-test-a3f2",
+            "bundle_id": bundle_id,
             "kb": "test",
-            "path": "bundles/20260221-test-a3f2",
+            "path": f"bundles/{bundle_id}",
             "platforms": ["claude"],  # 같은 플랫폼
             "domains": ["dev"],
             "topics": ["python"],
         }
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = existing
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing
+
+        # Create existing bundle dir for update to write into
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        raw_dir = bundle_dir / "_raw"
+        raw_dir.mkdir(parents=True)
 
         # claude JSONL 파일
         jsonl_path = tmp_path / "claude2.jsonl"
@@ -836,11 +855,13 @@ class TestMergeFile:
         jsonl_path.write_text("\n".join(lines), encoding="utf-8")
 
         result = pipeline.ingest_file(jsonl_path)
-        assert result is None  # SKIP
+        assert result is not None
+        assert result.get("updated") is True
+        assert result["bundle_id"] == bundle_id
 
     def test_merge_copies_raw_file(self, pipeline, chatgpt_jsonl, existing_bundle, mock_deps):
         """merge 후 _raw/에 두 파일 존재."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = existing_bundle
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle
 
         pipeline.ingest_file(chatgpt_jsonl)
 
@@ -853,7 +874,7 @@ class TestMergeFile:
 
     def test_merge_creates_platform_md(self, pipeline, chatgpt_jsonl, existing_bundle, mock_deps):
         """merge 후 새 {platform}.md 생성."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = existing_bundle
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle
 
         pipeline.ingest_file(chatgpt_jsonl)
 
@@ -863,7 +884,7 @@ class TestMergeFile:
 
     def test_merge_regenerates_bundle_md(self, pipeline, chatgpt_jsonl, existing_bundle, mock_deps):
         """merge 후 _bundle.md에 새 platforms 포함."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = existing_bundle
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle
 
         pipeline.ingest_file(chatgpt_jsonl)
 
@@ -877,7 +898,7 @@ class TestMergeFile:
 
     def test_merge_updates_db(self, pipeline, chatgpt_jsonl, existing_bundle, mock_deps):
         """merge 시 add_response_to_bundle + update_bundle_meta 호출."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = existing_bundle
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle
 
         pipeline.ingest_file(chatgpt_jsonl)
 
@@ -886,7 +907,7 @@ class TestMergeFile:
 
     def test_merge_passes_source_path(self, pipeline, chatgpt_jsonl, existing_bundle, mock_deps):
         """merge 시 add_response_to_bundle에 source_path 전달."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = existing_bundle
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle
 
         pipeline.ingest_file(chatgpt_jsonl)
 
@@ -896,7 +917,7 @@ class TestMergeFile:
 
     def test_merge_adds_chromadb_chunks(self, pipeline, chatgpt_jsonl, existing_bundle, mock_deps):
         """merge 시 새 플랫폼 chunks가 ChromaDB에 upsert."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = existing_bundle
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle
 
         pipeline.ingest_file(chatgpt_jsonl)
 
@@ -904,7 +925,7 @@ class TestMergeFile:
 
     def test_merge_returns_merged_flag(self, pipeline, chatgpt_jsonl, existing_bundle, mock_deps):
         """merge 반환값에 merged=True, bundle_id, platform."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = existing_bundle
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle
 
         result = pipeline.ingest_file(chatgpt_jsonl)
 
@@ -915,7 +936,7 @@ class TestMergeFile:
 
     def test_new_file_no_existing_bundle(self, pipeline, mock_deps, tmp_path):
         """새 파일 (기존 번들 없음) → 정상 ingest (merged 아님)."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = None
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = None
 
         jsonl_path = tmp_path / "new.jsonl"
         lines = [
@@ -949,7 +970,7 @@ class TestMergeFilePartialFailure:
     @pytest.fixture
     def mock_deps(self, tmp_path):
         repo = MagicMock()
-        repo.find_bundle_by_question_hash.return_value = None
+        repo.find_bundle_by_stable_id.return_value = None
         chunk_store = MagicMock()
         meta_gen = MagicMock()
         meta_gen.generate_response_meta.return_value = MagicMock(
@@ -1079,7 +1100,7 @@ class TestConcurrentDedup:
                 "domains": ["dev"],
                 "topics": ["python"],
             }
-        repo.find_bundle_by_question_hash.side_effect = _find_by_hash
+        repo.find_bundle_by_stable_id.side_effect = _find_by_hash
 
         def _track_upsert(**kw):
             call_count["n"] += 1
@@ -1117,8 +1138,13 @@ class TestConcurrentDedup:
         path.write_text("\n".join(lines), encoding="utf-8")
         return path
 
-    def test_concurrent_same_hash_only_one_created(self, mock_deps, tmp_path):
-        """같은 question_hash 4개 동시 ingest → upsert_bundle 1번만 호출."""
+    def test_concurrent_same_stable_id_serialized(self, mock_deps, tmp_path):
+        """같은 stable_id 4개 동시 ingest → per-stable_id lock으로 직렬화."""
+        # Pre-create bundle dir for updates
+        bundle_id = "20260221-test-slug-bd80"
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        (bundle_dir / "_raw").mkdir(parents=True)
+
         pipeline = IngestPipeline(
             repo=mock_deps["repo"], chunk_store=mock_deps["chunk_store"],
             meta_gen=mock_deps["meta_gen"], kb_path=mock_deps["kb_path"],
@@ -1142,13 +1168,13 @@ class TestConcurrentDedup:
             t.join()
 
         assert not errors, f"Unexpected errors: {errors}"
-        # Only 1 upsert_bundle (new creation); rest should be SKIP/merge
-        assert mock_deps["repo"].upsert_bundle.call_count == 1
+        # 1st creates new bundle, rest UPDATE (all call upsert_bundle)
+        assert mock_deps["repo"].upsert_bundle.call_count == 4
 
     def test_concurrent_different_hash_independent(self, mock_deps, tmp_path):
         """다른 question_hash → 각각 독립 생성."""
         # Each file has different question → different hash → no lock contention
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = None
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = None
 
         pipeline = IngestPipeline(
             repo=mock_deps["repo"], chunk_store=mock_deps["chunk_store"],
@@ -1175,7 +1201,7 @@ class TestConcurrentDedup:
 
     def test_force_skips_lock(self, mock_deps, tmp_path):
         """force=True는 lock 사용 안 함 (dedup check 자체를 건너뜀)."""
-        mock_deps["repo"].find_bundle_by_question_hash.return_value = None
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = None
 
         pipeline = IngestPipeline(
             repo=mock_deps["repo"], chunk_store=mock_deps["chunk_store"],
@@ -1232,7 +1258,7 @@ class TestIngestContentValidation:
     def test_accepts_sufficient_content(self, tmp_path):
         """50자 이상이면 정상 처리 진행 (meta_gen 호출)."""
         repo = MagicMock()
-        repo.find_bundle_by_question_hash.return_value = None
+        repo.find_bundle_by_stable_id.return_value = None
         chunk_store = MagicMock()
         meta_gen = MagicMock()
         meta_gen.generate_bundle_meta.return_value = MagicMock(
@@ -1274,7 +1300,7 @@ class TestIngestResponseSummaryValidation:
         from unittest.mock import patch
 
         repo = MagicMock()
-        repo.find_bundle_by_question_hash.return_value = None
+        repo.find_bundle_by_stable_id.return_value = None
         chunk_store = MagicMock()
         meta_gen = MagicMock()
 
@@ -1483,3 +1509,239 @@ class TestComputeStableId:
         conv_empty_url = self._make_conv(url="", turns=turns)
         conv_none_url = self._make_conv(url=None, turns=turns)
         assert compute_stable_id(conv_empty_url) == compute_stable_id(conv_none_url)
+
+
+class TestStableIdUpdateBehavior:
+    """Same platform + same stable_id → UPDATE (not SKIP).
+
+    The key behavioral change: previously, same platform + same question_hash
+    returned None (SKIP). Now, same stable_id + same platform triggers an
+    UPDATE flow that re-runs LLM, regenerates files, and refreshes DB/ChromaDB.
+    """
+
+    @pytest.fixture
+    def mock_deps(self, tmp_path):
+        """Create mocked dependencies for IngestPipeline."""
+        repo = MagicMock()
+        repo.find_bundle_by_stable_id.return_value = None
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+        meta_gen.generate_response_meta.return_value = MagicMock(
+            platform="claude",
+            model="claude-sonnet",
+            summary="응답 요약",
+            key_claims=["주장1"],
+            stance="informative",
+            model_dump=MagicMock(return_value={
+                "platform": "claude",
+                "model": "claude-sonnet",
+                "summary": "응답 요약",
+                "key_claims": ["주장1"],
+                "stance": "informative",
+            }),
+        )
+        meta_gen.generate_bundle_meta.return_value = MagicMock(
+            summary="번들 요약",
+            slug="test-slug",
+            domains=["dev"],
+            topics=["python"],
+            pending_topics=[],
+            consensus="합의점",
+            divergence="차이점",
+            model_dump=MagicMock(return_value={
+                "summary": "번들 요약",
+                "slug": "test-slug",
+                "domains": ["dev"],
+                "topics": ["python"],
+                "pending_topics": [],
+                "consensus": "합의점",
+                "divergence": "차이점",
+            }),
+        )
+        kb_path = tmp_path / "kb-test"
+        kb_path.mkdir()
+        return {
+            "repo": repo,
+            "chunk_store": chunk_store,
+            "meta_gen": meta_gen,
+            "kb_path": kb_path,
+            "kb_name": "test",
+        }
+
+    @pytest.fixture
+    def pipeline(self, mock_deps):
+        return IngestPipeline(
+            repo=mock_deps["repo"],
+            chunk_store=mock_deps["chunk_store"],
+            meta_gen=mock_deps["meta_gen"],
+            kb_path=mock_deps["kb_path"],
+            kb_name=mock_deps["kb_name"],
+            domains=["dev", "invest"],
+            topics=["python", "system-design"],
+        )
+
+    @pytest.fixture
+    def existing_bundle_dir(self, mock_deps):
+        """Create existing bundle directory with raw file."""
+        bundle_id = "20260221-test-slug-a3f2"
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        raw_dir = bundle_dir / "_raw"
+        raw_dir.mkdir(parents=True)
+
+        # Existing raw file
+        import json as json_mod
+        claude_lines = [
+            json_mod.dumps({
+                "_meta": True, "platform": "claude",
+                "url": "https://claude.ai/chat/123",
+                "exported_at": "2026-02-21T06:00:00.000Z",
+                "title": "테스트 대화",
+            }),
+            json_mod.dumps({
+                "role": "user", "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T06:00:01.000Z",
+            }),
+            json_mod.dumps({
+                "role": "assistant", "content": _ASYNC_ANSWER,
+                "timestamp": "2026-02-21T06:00:02.000Z",
+            }),
+        ]
+        (raw_dir / "claude.jsonl").write_text("\n".join(claude_lines), encoding="utf-8")
+        (bundle_dir / "claude.md").write_text("---\nplatform: claude\n---\n# Claude")
+        (bundle_dir / "_bundle.md").write_text("---\nid: test\n---\n")
+
+        return {
+            "bundle_id": bundle_id,
+            "kb": "test",
+            "path": f"bundles/{bundle_id}",
+            "platforms": ["claude"],
+            "domains": ["dev"],
+            "topics": ["python"],
+        }
+
+    @pytest.fixture
+    def sample_jsonl(self, tmp_path):
+        """Create a sample JSONL file for claude (same platform)."""
+        jsonl_path = tmp_path / "source" / "claude.jsonl"
+        jsonl_path.parent.mkdir(parents=True)
+        lines = [
+            json.dumps({
+                "_meta": True,
+                "platform": "claude",
+                "url": "https://claude.ai/chat/123",
+                "exported_at": "2026-02-21T06:00:00.000Z",
+                "title": "테스트 대화",
+            }),
+            json.dumps({
+                "role": "user",
+                "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T06:00:01.000Z",
+            }),
+            json.dumps({
+                "role": "assistant",
+                "content": _ASYNC_ANSWER,
+                "timestamp": "2026-02-21T06:00:02.000Z",
+            }),
+        ]
+        jsonl_path.write_text("\n".join(lines), encoding="utf-8")
+        return jsonl_path
+
+    def test_same_platform_same_stable_id_returns_update(
+        self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
+    ):
+        """같은 플랫폼 + 같은 stable_id → result에 updated=True (SKIP 아님)."""
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
+
+        result = pipeline.ingest_file(sample_jsonl)
+
+        assert result is not None
+        assert result.get("updated") is True
+        assert result["bundle_id"] == existing_bundle_dir["bundle_id"]
+
+    def test_update_reruns_llm(
+        self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
+    ):
+        """UPDATE 시 LLM(response_meta + bundle_meta) 재실행."""
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
+
+        pipeline.ingest_file(sample_jsonl)
+
+        mock_deps["meta_gen"].generate_response_meta.assert_called_once()
+        mock_deps["meta_gen"].generate_bundle_meta.assert_called_once()
+
+    def test_update_refreshes_chromadb(
+        self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
+    ):
+        """UPDATE 시 ChromaDB: 기존 chunks 삭제 + 새 chunks upsert."""
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
+
+        pipeline.ingest_file(sample_jsonl)
+
+        # Old chunks should be deleted
+        mock_deps["chunk_store"].delete_by_bundle_id.assert_called_once_with(
+            existing_bundle_dir["bundle_id"],
+        )
+        # New chunks should be upserted
+        mock_deps["chunk_store"].upsert_chunks.assert_called_once()
+
+    def test_update_calls_upsert_bundle(
+        self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
+    ):
+        """UPDATE 시 upsert_bundle 호출 (existing bundle_id로 ON CONFLICT UPDATE)."""
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
+
+        pipeline.ingest_file(sample_jsonl)
+
+        mock_deps["repo"].upsert_bundle.assert_called_once()
+        call_kwargs = mock_deps["repo"].upsert_bundle.call_args[1]
+        assert call_kwargs["bundle_id"] == existing_bundle_dir["bundle_id"]
+
+    def test_update_passes_stable_id_to_upsert(
+        self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
+    ):
+        """UPDATE 시 upsert_bundle에 stable_id 전달."""
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
+
+        pipeline.ingest_file(sample_jsonl)
+
+        call_kwargs = mock_deps["repo"].upsert_bundle.call_args[1]
+        assert "stable_id" in call_kwargs
+        assert call_kwargs["stable_id"] is not None
+
+    def test_update_copies_raw_file(
+        self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
+    ):
+        """UPDATE 시 raw 파일을 bundle _raw/에 복사 (덮어쓰기)."""
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
+
+        pipeline.ingest_file(sample_jsonl)
+
+        raw_dir = (
+            mock_deps["kb_path"] / "bundles" / existing_bundle_dir["bundle_id"] / "_raw"
+        )
+        assert (raw_dir / "claude.jsonl").exists()
+
+    def test_update_regenerates_md_files(
+        self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
+    ):
+        """UPDATE 시 platform MD와 _bundle.md 재생성."""
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
+
+        pipeline.ingest_file(sample_jsonl)
+
+        bundle_dir = (
+            mock_deps["kb_path"] / "bundles" / existing_bundle_dir["bundle_id"]
+        )
+        assert (bundle_dir / "claude.md").exists()
+        assert (bundle_dir / "_bundle.md").exists()
+
+    def test_new_bundle_passes_stable_id(self, pipeline, sample_jsonl, mock_deps):
+        """새 번들 생성 시에도 stable_id가 upsert_bundle에 전달됨."""
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = None
+
+        pipeline.ingest_file(sample_jsonl)
+
+        call_kwargs = mock_deps["repo"].upsert_bundle.call_args[1]
+        assert "stable_id" in call_kwargs
+        assert call_kwargs["stable_id"] is not None
+        assert len(call_kwargs["stable_id"]) == 64  # SHA-256 hex
