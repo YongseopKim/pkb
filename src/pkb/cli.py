@@ -1059,16 +1059,16 @@ def _build_watch_callback(
     *,
     pipelines: dict,
     kb_entries: dict,
-    repo,
-    chunk_store,
+    **_kwargs,
 ):
     """Build the callback for KBWatcher that handles new/modified files.
 
-    When a file was previously ingested (tracked via source_path), the old bundle
-    is completely removed (DB + ChromaDB + filesystem) before re-ingesting.
-    """
-    import shutil
+    stable_id based dedup in the ingest pipeline handles CREATE/UPDATE/MERGE
+    automatically, so no manual delete+reingest logic is needed.
 
+    Note: repo and chunk_store kwargs are accepted but ignored (kept for
+    backward compatibility with callers).
+    """
     from pkb.ingest import move_to_done
 
     # Build resolved-path lookup to handle symlinks (e.g. macOS /tmp -> /private/tmp)
@@ -1085,25 +1085,18 @@ def _build_watch_callback(
         kb_match = _find_watch_dir_for_path(file_path, resolved_kb_entries)
         kb_entry = kb_match[1] if kb_match else None
 
-        # Check if this file was previously ingested
-        existing_bundle_id = repo.find_by_source_path(str(file_path))
-
-        if existing_bundle_id:
-            # Delete old bundle completely (DB + ChromaDB + filesystem)
-            chunk_store.delete_by_bundle(existing_bundle_id)
-            if kb_entry:
-                bundle_dir = kb_entry.path / "bundles" / existing_bundle_id
-                shutil.rmtree(bundle_dir, ignore_errors=True)
-            repo.delete_bundle(existing_bundle_id)
-            click.echo(f"  REINGEST: {file_path.name} (deleted {existing_bundle_id})")
-
+        # stable_id based dedup handles CREATE/UPDATE/MERGE automatically
         try:
-            result = pipeline.ingest_file(file_path, force=bool(existing_bundle_id))
+            result = pipeline.ingest_file(file_path)
             if result is None:
                 click.echo(f"  SKIP (duplicate): {file_path.name}")
             elif result.get("status", "").startswith("skip_"):
                 reason = result.get("reason", "unknown")
                 click.echo(f"  SKIP ({reason}): {file_path.name}")
+            elif result.get("updated"):
+                click.echo(
+                    f"  UPDATE: {file_path.name} → {result['bundle_id']}"
+                )
             elif result.get("merged"):
                 click.echo(
                     f"  MERGE: {file_path.name} → {result['bundle_id']}"
@@ -1125,16 +1118,16 @@ def _build_watch_ingest_fn(
     *,
     pipelines: dict,
     kb_entries: dict,
-    repo,
-    chunk_store,
+    **_kwargs,
 ):
     """Build an ingest_fn callable for IngestEngine in watch mode.
 
-    Handles reingest logic: if file was previously ingested (tracked via source_path),
-    the old bundle is completely removed before re-ingesting.
-    """
-    import shutil
+    stable_id based dedup in the ingest pipeline handles CREATE/UPDATE/MERGE
+    automatically, so no manual delete+reingest logic is needed.
 
+    Note: repo and chunk_store kwargs are accepted but ignored (kept for
+    backward compatibility with callers).
+    """
     from pkb.ingest import move_to_done
 
     # Build resolved-path lookup to handle symlinks (e.g. macOS /tmp -> /private/tmp)
@@ -1150,18 +1143,9 @@ def _build_watch_ingest_fn(
         kb_match = _find_watch_dir_for_path(file_path, resolved_kb_entries)
         kb_entry = kb_match[1] if kb_match else None
 
-        # Check if this file was previously ingested
-        existing_bundle_id = repo.find_by_source_path(str(file_path))
+        # stable_id based dedup handles CREATE/UPDATE/MERGE automatically
+        result = pipeline.ingest_file(file_path)
 
-        if existing_bundle_id:
-            # Delete old bundle completely (DB + ChromaDB + filesystem)
-            chunk_store.delete_by_bundle(existing_bundle_id)
-            if kb_entry:
-                bundle_dir = kb_entry.path / "bundles" / existing_bundle_id
-                shutil.rmtree(bundle_dir, ignore_errors=True)
-            repo.delete_bundle(existing_bundle_id)
-
-        result = pipeline.ingest_file(file_path, force=bool(existing_bundle_id))
         if kb_entry:
             move_to_done(file_path, kb_entry.get_watch_dir())
         return result

@@ -768,54 +768,39 @@ class TestFindWatchDirForPath:
 
 
 class TestWatchReingest:
-    """watch _on_new_file 콜백의 reingest 로직 테스트."""
+    """watch _on_new_file 콜백: stable_id 기반 dedup 테스트.
 
-    def test_reingest_deletes_old_bundle_and_reingests(self, tmp_path):
-        """수정된 파일 감지 시 기존 bundle 삭제 + 새로 ingest."""
+    stable_id가 도입되면서 watch 콜백에서 수동 delete+reingest 로직이 제거됨.
+    pipeline.ingest_file()이 CREATE/UPDATE/MERGE를 자동으로 처리.
+    """
+
+    def test_stable_id_handles_update_automatically(self, tmp_path):
+        """수정된 파일: pipeline이 stable_id로 UPDATE를 자동 처리."""
         from pkb.cli import _build_watch_callback
 
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = "20260221-old-bundle-a3f2"
-
-        chunk_store = MagicMock()
-
         pipeline = MagicMock()
-        pipeline.ingest_file.return_value = {"bundle_id": "20260221-new-bundle-b4c5"}
-
-        kb_path = tmp_path / "kb"
-        bundle_dir = kb_path / "bundles" / "20260221-old-bundle-a3f2"
-        bundle_dir.mkdir(parents=True)
-        (bundle_dir / "_bundle.md").write_text("test")
+        pipeline.ingest_file.return_value = {
+            "bundle_id": "20260221-old-bundle-a3f2",
+            "updated": True,
+        }
 
         watch_dir = tmp_path / "inbox"
         watch_dir.mkdir()
 
         callback = _build_watch_callback(
             pipelines={str(watch_dir): pipeline},
-            kb_entries={str(watch_dir): MagicMock(path=kb_path)},
-            repo=repo,
-            chunk_store=chunk_store,
+            kb_entries={str(watch_dir): MagicMock(path=tmp_path / "kb")},
         )
 
         file_path = watch_dir / "test.jsonl"
         callback(file_path)
 
-        # 기존 bundle 삭제 확인
-        chunk_store.delete_by_bundle.assert_called_once_with("20260221-old-bundle-a3f2")
-        repo.delete_bundle.assert_called_once_with("20260221-old-bundle-a3f2")
-        assert not bundle_dir.exists()
+        # stable_id 기반: force 없이 일반 ingest
+        pipeline.ingest_file.assert_called_once_with(file_path)
 
-        # 새로 ingest (force=True)
-        pipeline.ingest_file.assert_called_once_with(file_path, force=True)
-
-    def test_new_file_no_reingest(self, tmp_path):
-        """새 파일은 기존 bundle 없으므로 일반 ingest."""
+    def test_new_file_ingest(self, tmp_path):
+        """새 파일은 일반 ingest (no force)."""
         from pkb.cli import _build_watch_callback
-
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
-
-        chunk_store = MagicMock()
 
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = {"bundle_id": "20260221-new-a3f2"}
@@ -826,24 +811,17 @@ class TestWatchReingest:
         callback = _build_watch_callback(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): MagicMock(path=tmp_path / "kb")},
-            repo=repo,
-            chunk_store=chunk_store,
         )
 
         file_path = watch_dir / "test.jsonl"
         callback(file_path)
 
-        # 삭제 없이 일반 ingest
-        repo.delete_bundle.assert_not_called()
-        chunk_store.delete_by_bundle.assert_not_called()
-        pipeline.ingest_file.assert_called_once_with(file_path, force=False)
+        # stable_id 기반: force 없이 일반 ingest
+        pipeline.ingest_file.assert_called_once_with(file_path)
 
     def test_duplicate_skip_output(self, tmp_path):
         """ingest가 None 반환 시 (duplicate) 에러 없이 처리."""
         from pkb.cli import _build_watch_callback
-
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
 
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = None
@@ -854,98 +832,74 @@ class TestWatchReingest:
         callback = _build_watch_callback(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): MagicMock(path=tmp_path / "kb")},
-            repo=repo,
-            chunk_store=MagicMock(),
         )
 
         file_path = watch_dir / "test.jsonl"
         # Should not raise
         callback(file_path)
 
-    def test_subdirectory_reingest(self, tmp_path):
-        """서브디렉토리 파일의 reingest도 정상 동작."""
+    def test_subdirectory_ingest(self, tmp_path):
+        """서브디렉토리 파일도 stable_id 기반으로 정상 ingest."""
         from pkb.cli import _build_watch_callback
-
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = "20260222-old-a3f2"
-
-        chunk_store = MagicMock()
 
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = {"bundle_id": "20260222-new-b4c5"}
-
-        kb_path = tmp_path / "kb"
-        bundle_dir = kb_path / "bundles" / "20260222-old-a3f2"
-        bundle_dir.mkdir(parents=True)
 
         watch_dir = tmp_path / "inbox"
         sub = watch_dir / "PKB"
         sub.mkdir(parents=True)
 
         kb_entry = MagicMock()
-        kb_entry.path = kb_path
+        kb_entry.path = tmp_path / "kb"
         kb_entry.get_watch_dir.return_value = watch_dir
 
         callback = _build_watch_callback(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): kb_entry},
-            repo=repo,
-            chunk_store=chunk_store,
         )
 
         file_path = sub / "chatgpt.md"
         callback(file_path)
 
-        # 기존 bundle 삭제 확인
-        repo.delete_bundle.assert_called_once_with("20260222-old-a3f2")
-        # 새로 ingest (force=True)
-        pipeline.ingest_file.assert_called_once_with(file_path, force=True)
+        # stable_id 기반: force 없이 일반 ingest
+        pipeline.ingest_file.assert_called_once_with(file_path)
 
 
 class TestBuildWatchIngestFn:
-    """_build_watch_ingest_fn() 테스트: IngestEngine용 ingest_fn."""
+    """_build_watch_ingest_fn() 테스트: IngestEngine용 ingest_fn.
 
-    def test_reingest_via_ingest_fn(self, tmp_path):
-        """수정된 파일 감지 시 기존 bundle 삭제 + 새로 ingest."""
+    stable_id 도입 후 수동 delete+reingest 로직 제거됨.
+    pipeline.ingest_file()이 CREATE/UPDATE/MERGE를 자동 처리.
+    """
+
+    def test_update_via_ingest_fn(self, tmp_path):
+        """수정된 파일: pipeline이 stable_id로 UPDATE를 자동 처리."""
         from pkb.cli import _build_watch_ingest_fn
 
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = "20260221-old-a3f2"
-
-        chunk_store = MagicMock()
-
         pipeline = MagicMock()
-        pipeline.ingest_file.return_value = {"bundle_id": "20260221-new-b4c5"}
-
-        kb_path = tmp_path / "kb"
-        bundle_dir = kb_path / "bundles" / "20260221-old-a3f2"
-        bundle_dir.mkdir(parents=True)
-        (bundle_dir / "_bundle.md").write_text("test")
+        pipeline.ingest_file.return_value = {
+            "bundle_id": "20260221-old-a3f2",
+            "updated": True,
+        }
 
         watch_dir = tmp_path / "inbox"
         watch_dir.mkdir()
 
         ingest_fn = _build_watch_ingest_fn(
             pipelines={str(watch_dir): pipeline},
-            kb_entries={str(watch_dir): MagicMock(path=kb_path)},
-            repo=repo,
-            chunk_store=chunk_store,
+            kb_entries={str(watch_dir): MagicMock(path=tmp_path / "kb")},
         )
 
         file_path = watch_dir / "test.jsonl"
         result = ingest_fn(file_path)
 
-        assert result == {"bundle_id": "20260221-new-b4c5"}
-        chunk_store.delete_by_bundle.assert_called_once_with("20260221-old-a3f2")
-        repo.delete_bundle.assert_called_once_with("20260221-old-a3f2")
-        pipeline.ingest_file.assert_called_once_with(file_path, force=True)
+        assert result == {"bundle_id": "20260221-old-a3f2", "updated": True}
+        # stable_id 기반: force 없이 일반 ingest
+        pipeline.ingest_file.assert_called_once_with(file_path)
 
     def test_new_file_via_ingest_fn(self, tmp_path):
         from pkb.cli import _build_watch_ingest_fn
 
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
-        chunk_store = MagicMock()
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = {"bundle_id": "20260221-new-a3f2"}
 
@@ -955,16 +909,13 @@ class TestBuildWatchIngestFn:
         ingest_fn = _build_watch_ingest_fn(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): MagicMock(path=tmp_path / "kb")},
-            repo=repo,
-            chunk_store=chunk_store,
         )
 
         file_path = watch_dir / "test.jsonl"
         result = ingest_fn(file_path)
 
         assert result == {"bundle_id": "20260221-new-a3f2"}
-        repo.delete_bundle.assert_not_called()
-        pipeline.ingest_file.assert_called_once_with(file_path, force=False)
+        pipeline.ingest_file.assert_called_once_with(file_path)
 
     def test_unknown_parent_returns_none(self, tmp_path):
         from pkb.cli import _build_watch_ingest_fn
@@ -972,8 +923,6 @@ class TestBuildWatchIngestFn:
         ingest_fn = _build_watch_ingest_fn(
             pipelines={},
             kb_entries={},
-            repo=MagicMock(),
-            chunk_store=MagicMock(),
         )
 
         result = ingest_fn(tmp_path / "unknown" / "test.jsonl")
@@ -983,9 +932,6 @@ class TestBuildWatchIngestFn:
         """symlink 경로에서도 pipeline이 올바르게 매칭되어야 함 (macOS /tmp 등)."""
         from pkb.cli import _build_watch_ingest_fn
 
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
-        chunk_store = MagicMock()
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = {"bundle_id": "20260222-test-a1b2"}
 
@@ -1001,8 +947,6 @@ class TestBuildWatchIngestFn:
         ingest_fn = _build_watch_ingest_fn(
             pipelines={str(link_inbox): pipeline},
             kb_entries={str(link_inbox): MagicMock(path=tmp_path / "kb")},
-            repo=repo,
-            chunk_store=chunk_store,
         )
 
         # watchdog은 resolved 경로로 파일을 전달 (macOS /tmp -> /private/tmp)
@@ -1011,15 +955,12 @@ class TestBuildWatchIngestFn:
 
         # symlink 해석 후 정상적으로 ingest되어야 함
         assert result == {"bundle_id": "20260222-test-a1b2"}
-        pipeline.ingest_file.assert_called_once_with(resolved_file, force=False)
+        pipeline.ingest_file.assert_called_once_with(resolved_file)
 
     def test_subdirectory_file_matches_pipeline(self, tmp_path):
         """서브디렉토리 파일이 올바른 pipeline에 매칭되어야 함."""
         from pkb.cli import _build_watch_ingest_fn
 
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
-        chunk_store = MagicMock()
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = {"bundle_id": "20260222-sub-a1b2"}
 
@@ -1034,15 +975,13 @@ class TestBuildWatchIngestFn:
         ingest_fn = _build_watch_ingest_fn(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): kb_entry},
-            repo=repo,
-            chunk_store=chunk_store,
         )
 
         file_path = sub / "chatgpt.md"
         result = ingest_fn(file_path)
 
         assert result == {"bundle_id": "20260222-sub-a1b2"}
-        pipeline.ingest_file.assert_called_once_with(file_path, force=False)
+        pipeline.ingest_file.assert_called_once_with(file_path)
 
 
 class TestWatchMoveToDone:
@@ -1051,9 +990,6 @@ class TestWatchMoveToDone:
     def test_callback_moves_to_done_on_success(self, tmp_path):
         """_build_watch_callback: ingest 성공 시 move_to_done 호출."""
         from pkb.cli import _build_watch_callback
-
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
 
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = {"bundle_id": "20260221-new-a3f2"}
@@ -1070,8 +1006,6 @@ class TestWatchMoveToDone:
         callback = _build_watch_callback(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): kb_entry},
-            repo=repo,
-            chunk_store=MagicMock(),
         )
 
         callback(jsonl)
@@ -1083,9 +1017,6 @@ class TestWatchMoveToDone:
     def test_ingest_fn_moves_to_done_on_success(self, tmp_path):
         """_build_watch_ingest_fn: ingest 성공 시 move_to_done 호출."""
         from pkb.cli import _build_watch_ingest_fn
-
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
 
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = {"bundle_id": "20260221-new-a3f2"}
@@ -1102,8 +1033,6 @@ class TestWatchMoveToDone:
         ingest_fn = _build_watch_ingest_fn(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): kb_entry},
-            repo=repo,
-            chunk_store=MagicMock(),
         )
 
         ingest_fn(jsonl)
@@ -1115,9 +1044,6 @@ class TestWatchMoveToDone:
     def test_callback_moves_subdirectory_file_to_done(self, tmp_path):
         """_build_watch_callback: 서브디렉토리 파일 .done/ 이동."""
         from pkb.cli import _build_watch_callback
-
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
 
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = {"bundle_id": "20260222-sub-a1b2"}
@@ -1135,8 +1061,6 @@ class TestWatchMoveToDone:
         callback = _build_watch_callback(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): kb_entry},
-            repo=repo,
-            chunk_store=MagicMock(),
         )
 
         callback(md_file)
@@ -1147,9 +1071,6 @@ class TestWatchMoveToDone:
     def test_ingest_fn_moves_subdirectory_file_to_done(self, tmp_path):
         """_build_watch_ingest_fn: 서브디렉토리 파일 .done/ 이동."""
         from pkb.cli import _build_watch_ingest_fn
-
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
 
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = {"bundle_id": "20260222-sub-a1b2"}
@@ -1167,8 +1088,6 @@ class TestWatchMoveToDone:
         ingest_fn = _build_watch_ingest_fn(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): kb_entry},
-            repo=repo,
-            chunk_store=MagicMock(),
         )
 
         ingest_fn(md_file)
@@ -1183,10 +1102,6 @@ class TestSkipMovesToDone:
     def test_watch_ingest_fn_moves_skip_to_done(self, tmp_path):
         """_build_watch_ingest_fn: SKIP 시에도 move_to_done 호출."""
         from pkb.cli import _build_watch_ingest_fn
-
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
-        chunk_store = MagicMock()
 
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = None  # SKIP (duplicate)
@@ -1203,8 +1118,6 @@ class TestSkipMovesToDone:
         ingest_fn = _build_watch_ingest_fn(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): kb_entry},
-            repo=repo,
-            chunk_store=chunk_store,
         )
 
         ingest_fn(jsonl)
@@ -1216,9 +1129,6 @@ class TestSkipMovesToDone:
     def test_watch_callback_moves_skip_to_done(self, tmp_path):
         """_build_watch_callback: SKIP 시에도 move_to_done 호출."""
         from pkb.cli import _build_watch_callback
-
-        repo = MagicMock()
-        repo.find_by_source_path.return_value = None
 
         pipeline = MagicMock()
         pipeline.ingest_file.return_value = None  # SKIP (duplicate)
@@ -1235,8 +1145,6 @@ class TestSkipMovesToDone:
         callback = _build_watch_callback(
             pipelines={str(watch_dir): pipeline},
             kb_entries={str(watch_dir): kb_entry},
-            repo=repo,
-            chunk_store=MagicMock(),
         )
 
         callback(jsonl)
