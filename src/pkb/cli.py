@@ -168,6 +168,7 @@ def ingest(path: str, kb: str, dry_run: bool) -> None:
     errors = 0
 
     merged = 0
+    updated = 0
     for f in input_files:
         try:
             result = pipeline.ingest_file(f)
@@ -178,6 +179,11 @@ def ingest(path: str, kb: str, dry_run: bool) -> None:
                 skipped += 1
                 reason = result.get("reason", "unknown")
                 click.echo(f"  {prefix}SKIP ({reason}): {f.name}")
+            elif result.get("updated"):
+                updated += 1
+                click.echo(
+                    f"  {prefix}UPDATE: {f.name} → {result['bundle_id']}"
+                )
             elif result.get("merged"):
                 merged += 1
                 click.echo(
@@ -196,6 +202,8 @@ def ingest(path: str, kb: str, dry_run: bool) -> None:
             click.echo(f"  ERROR: {f.name} — {e}")
 
     parts = [f"{success} ingested"]
+    if updated:
+        parts.append(f"{updated} updated")
     if merged:
         parts.append(f"{merged} merged")
     parts.extend([f"{skipped} skipped", f"{errors} errors"])
