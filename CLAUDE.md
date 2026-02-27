@@ -46,6 +46,8 @@ pkb/                          <- This repo (tool)
 │   ├── web/                  <- FastAPI web UI (htmx, Jinja2 templates)
 │   └── data/                 <- Bundled seed data (domains, topics)
 ├── tests/                    <- 1046 tests (985 mock + 61 integration)
+├── scripts/                  <- Build + release scripts
+│   └── hooks/                <- Git hooks (core.hooksPath target)
 ├── prompts/                  <- LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 └── pyproject.toml
 
@@ -78,6 +80,17 @@ pkb/                          <- This repo (tool)
 - **Stable ID**: SHA-256 of normalized URL (primary) or initial turns fingerprint (fallback). Enables file relocation tracking, content update detection, and dedup. Same stable_id + same platform → UPDATE (re-run LLM, refresh DB/ChromaDB). Same stable_id + different platform → MERGE.
 - **Tag system**: 2-tier — Domain (L1, 8 fixed) + Topic (L2, controlled vocab with pending workflow)
 - **API keys**: Priority env var > config.yaml `api_key` > SDK default. `PKB_DB_PASSWORD` for DB.
+
+## Git Hooks
+
+Git hooks are stored in `scripts/hooks/` and activated via `core.hooksPath`:
+
+```bash
+git config core.hooksPath scripts/hooks   # Required after fresh clone
+```
+
+**Available hooks**:
+- `post-commit` — Auto patch bump + build after each commit (`release.sh patch`). Skips during rebase/merge/cherry-pick. Set `PKB_SKIP_POST_COMMIT=1` to disable.
 
 ## Development Commands
 

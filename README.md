@@ -185,6 +185,19 @@ pkb db reset --kb personal      # KB 데이터 전체 삭제 (확인 필요)
 
 ## 개발
 
+### Git Hooks 설정
+
+최초 clone 후 반드시 실행:
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+- `post-commit` — 커밋 시 자동 패치 버전 범프 + 빌드 (`release.sh patch`)
+- `PKB_SKIP_POST_COMMIT=1`로 비활성화 가능
+
+### 테스트
+
 ```bash
 # 테스트
 pytest                       # 1046개 테스트 (985 mock + 61 integration)
