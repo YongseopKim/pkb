@@ -420,7 +420,8 @@ class TestIngestPipeline:
         assert result is not None
         assert result.get("updated") is True
         assert result["bundle_id"] == bundle_id
-        mock_deps["repo"].upsert_bundle.assert_called_once()
+        mock_deps["repo"].update_bundle_meta.assert_called_once()
+        mock_deps["repo"].add_response_to_bundle.assert_called_once()
 
     def test_creates_bundle_directory(self, pipeline, sample_jsonl, mock_deps):
         result = pipeline.ingest_file(sample_jsonl)
@@ -1124,11 +1125,12 @@ class TestConcurrentDedup:
             "kb_path": kb_path, "kb_name": "test",
         }
 
-    def _make_jsonl(self, tmp_path, name, *, user_content="같은 질문"):
+    def _make_jsonl(self, tmp_path, name, *, user_content="같은 질문",
+                    url="https://claude.ai/chat/1"):
         path = tmp_path / name
         lines = [
             json.dumps({"_meta": True, "platform": "claude",
-                         "url": "https://claude.ai/chat/1",
+                         "url": url,
                          "exported_at": "2026-02-21T06:00:00.000Z", "title": "테스트"}),
             json.dumps({"role": "user", "content": user_content,
                          "timestamp": "2026-02-21T06:00:01.000Z"}),
@@ -1168,12 +1170,15 @@ class TestConcurrentDedup:
             t.join()
 
         assert not errors, f"Unexpected errors: {errors}"
-        # 1st creates new bundle, rest UPDATE (all call upsert_bundle)
-        assert mock_deps["repo"].upsert_bundle.call_count == 4
+        # 1st creates new bundle (upsert_bundle), rest UPDATE (update_bundle_meta)
+        assert mock_deps["repo"].upsert_bundle.call_count == 1
+        assert mock_deps["repo"].update_bundle_meta.call_count == 3
+        assert mock_deps["repo"].add_response_to_bundle.call_count == 3
 
-    def test_concurrent_different_hash_independent(self, mock_deps, tmp_path):
-        """다른 question_hash → 각각 독립 생성."""
-        # Each file has different question → different hash → no lock contention
+    def test_concurrent_different_stable_id_independent(self, mock_deps, tmp_path):
+        """다른 stable_id → 각각 독립 생성."""
+        # Each file has different URL → different stable_id → no lock contention
+        mock_deps["repo"].find_bundle_by_stable_id.side_effect = None
         mock_deps["repo"].find_bundle_by_stable_id.return_value = None
 
         pipeline = IngestPipeline(
@@ -1182,7 +1187,10 @@ class TestConcurrentDedup:
             kb_name=mock_deps["kb_name"], domains=["dev"], topics=["python"],
         )
         files = [
-            self._make_jsonl(tmp_path, f"file{i}.jsonl", user_content=f"질문 {i}")
+            self._make_jsonl(
+                tmp_path, f"file{i}.jsonl",
+                url=f"https://claude.ai/chat/{i}",
+            )
             for i in range(3)
         ]
         results = []
@@ -1684,29 +1692,46 @@ class TestStableIdUpdateBehavior:
         # New chunks should be upserted
         mock_deps["chunk_store"].upsert_chunks.assert_called_once()
 
-    def test_update_calls_upsert_bundle(
+    def test_update_calls_update_bundle_meta(
         self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
     ):
-        """UPDATE 시 upsert_bundle 호출 (existing bundle_id로 ON CONFLICT UPDATE)."""
+        """UPDATE 시 update_bundle_meta + add_response_to_bundle 호출."""
         mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
 
         pipeline.ingest_file(sample_jsonl)
 
-        mock_deps["repo"].upsert_bundle.assert_called_once()
-        call_kwargs = mock_deps["repo"].upsert_bundle.call_args[1]
+        mock_deps["repo"].update_bundle_meta.assert_called_once()
+        call_kwargs = mock_deps["repo"].update_bundle_meta.call_args[1]
         assert call_kwargs["bundle_id"] == existing_bundle_dir["bundle_id"]
+        assert "summary" in call_kwargs
+        assert "domains" in call_kwargs
+        assert "topics" in call_kwargs
 
-    def test_update_passes_stable_id_to_upsert(
+    def test_update_calls_add_response_to_bundle(
         self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
     ):
-        """UPDATE 시 upsert_bundle에 stable_id 전달."""
+        """UPDATE 시 add_response_to_bundle 호출 (다른 플랫폼 보존)."""
         mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
 
         pipeline.ingest_file(sample_jsonl)
 
-        call_kwargs = mock_deps["repo"].upsert_bundle.call_args[1]
-        assert "stable_id" in call_kwargs
-        assert call_kwargs["stable_id"] is not None
+        mock_deps["repo"].add_response_to_bundle.assert_called_once()
+        call_kwargs = mock_deps["repo"].add_response_to_bundle.call_args[1]
+        assert call_kwargs["bundle_id"] == existing_bundle_dir["bundle_id"]
+        assert call_kwargs["platform"] == "claude"
+
+    def test_update_passes_question_to_meta(
+        self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
+    ):
+        """UPDATE 시 update_bundle_meta에 question/question_hash/source_path 전달."""
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_bundle_dir
+
+        pipeline.ingest_file(sample_jsonl)
+
+        call_kwargs = mock_deps["repo"].update_bundle_meta.call_args[1]
+        assert call_kwargs["question"] is not None
+        assert call_kwargs["question_hash"] is not None
+        assert call_kwargs["source_path"] is not None
 
     def test_update_copies_raw_file(
         self, pipeline, sample_jsonl, mock_deps, existing_bundle_dir,
@@ -1745,3 +1770,120 @@ class TestStableIdUpdateBehavior:
         assert "stable_id" in call_kwargs
         assert call_kwargs["stable_id"] is not None
         assert len(call_kwargs["stable_id"]) == 64  # SHA-256 hex
+
+    def test_multi_platform_update_preserves_other_platforms(
+        self, pipeline, sample_jsonl, mock_deps,
+    ):
+        """멀티 플랫폼 번들에서 한 플랫폼 UPDATE 시 다른 플랫폼 보존."""
+        bundle_id = "20260221-multi-slug-b1c2"
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        raw_dir = bundle_dir / "_raw"
+        raw_dir.mkdir(parents=True)
+
+        # Existing raw files for both platforms
+        import json as json_mod
+        claude_lines = [
+            json_mod.dumps({
+                "_meta": True, "platform": "claude",
+                "url": "https://claude.ai/chat/multi",
+                "exported_at": "2026-02-21T06:00:00.000Z", "title": "멀티 대화",
+            }),
+            json_mod.dumps({
+                "role": "user", "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T06:00:01.000Z",
+            }),
+            json_mod.dumps({
+                "role": "assistant", "content": _ASYNC_ANSWER,
+                "timestamp": "2026-02-21T06:00:02.000Z",
+            }),
+        ]
+        chatgpt_lines = [
+            json_mod.dumps({
+                "_meta": True, "platform": "chatgpt",
+                "url": "https://chatgpt.com/c/multi",
+                "exported_at": "2026-02-21T07:00:00.000Z", "title": "멀티 대화",
+            }),
+            json_mod.dumps({
+                "role": "user", "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T07:00:01.000Z",
+            }),
+            json_mod.dumps({
+                "role": "assistant", "content": _ASYNC_ANSWER,
+                "timestamp": "2026-02-21T07:00:02.000Z",
+            }),
+        ]
+        (raw_dir / "claude.jsonl").write_text("\n".join(claude_lines), encoding="utf-8")
+        (raw_dir / "chatgpt.jsonl").write_text(
+            "\n".join(chatgpt_lines), encoding="utf-8",
+        )
+        (bundle_dir / "claude.md").write_text("---\nplatform: claude\n---\n")
+        (bundle_dir / "chatgpt.md").write_text("---\nplatform: chatgpt\n---\n")
+        (bundle_dir / "_bundle.md").write_text("---\nid: test\n---\n")
+
+        existing_multi = {
+            "bundle_id": bundle_id,
+            "kb": "test",
+            "path": f"bundles/{bundle_id}",
+            "platforms": ["claude", "chatgpt"],
+            "domains": ["dev"],
+            "topics": ["python"],
+        }
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing_multi
+
+        result = pipeline.ingest_file(sample_jsonl)
+
+        # Should use add_response_to_bundle (not upsert_bundle)
+        mock_deps["repo"].add_response_to_bundle.assert_called_once()
+        # upsert_bundle should NOT be called (would destroy chatgpt response)
+        mock_deps["repo"].upsert_bundle.assert_not_called()
+        # update_bundle_meta should be called
+        mock_deps["repo"].update_bundle_meta.assert_called_once()
+        # Result should indicate update
+        assert result.get("updated") is True
+
+    def test_multi_platform_update_bundle_md_includes_all_platforms(
+        self, pipeline, sample_jsonl, mock_deps,
+    ):
+        """멀티 플랫폼 UPDATE 시 _bundle.md에 모든 플랫폼 포함."""
+        bundle_id = "20260221-multi-slug-c3d4"
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        raw_dir = bundle_dir / "_raw"
+        raw_dir.mkdir(parents=True)
+
+        import json as json_mod
+        claude_lines = [
+            json_mod.dumps({
+                "_meta": True, "platform": "claude",
+                "url": "https://claude.ai/chat/456",
+                "exported_at": "2026-02-21T06:00:00.000Z", "title": "테스트",
+            }),
+            json_mod.dumps({
+                "role": "user", "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T06:00:01.000Z",
+            }),
+            json_mod.dumps({
+                "role": "assistant", "content": _ASYNC_ANSWER,
+                "timestamp": "2026-02-21T06:00:02.000Z",
+            }),
+        ]
+        (raw_dir / "claude.jsonl").write_text("\n".join(claude_lines), encoding="utf-8")
+        (bundle_dir / "_bundle.md").write_text("---\nid: test\n---\n")
+
+        existing = {
+            "bundle_id": bundle_id,
+            "kb": "test",
+            "path": f"bundles/{bundle_id}",
+            "platforms": ["claude", "chatgpt"],
+            "domains": ["dev"],
+            "topics": ["python"],
+        }
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = existing
+
+        pipeline.ingest_file(sample_jsonl)
+
+        import yaml
+        bundle_md = (bundle_dir / "_bundle.md").read_text(encoding="utf-8")
+        # Parse YAML frontmatter
+        parts = bundle_md.split("---")
+        meta = yaml.safe_load(parts[1])
+        assert set(meta["platforms"]) == {"claude", "chatgpt"}

@@ -330,15 +330,33 @@ class BundleRepository:
         domains: list[str],
         topics: list[str],
         pending_topics: list[str] | None = None,
+        question: str | None = None,
+        question_hash: str | None = None,
+        source_path: str | None = None,
     ) -> None:
-        """Update bundle metadata (summary, domains, topics) from frontmatter edits."""
+        """Update bundle metadata (summary, domains, topics) from frontmatter edits.
+
+        Optional params (question, question_hash, source_path) are for the
+        reingest UPDATE path — when None, existing values are preserved.
+        """
         with self._get_conn() as conn:
             conn.execute(
                 """
-                UPDATE bundles SET summary = %(summary)s, updated_at = NOW()
+                UPDATE bundles SET
+                    summary = %(summary)s,
+                    question = COALESCE(%(question)s, question),
+                    question_hash = COALESCE(%(question_hash)s, question_hash),
+                    source_path = COALESCE(%(source_path)s, source_path),
+                    updated_at = NOW()
                 WHERE id = %(id)s
                 """,
-                {"id": bundle_id, "summary": summary},
+                {
+                    "id": bundle_id,
+                    "summary": summary,
+                    "question": question,
+                    "question_hash": question_hash,
+                    "source_path": source_path,
+                },
             )
 
             # Replace domains (deduplicate)

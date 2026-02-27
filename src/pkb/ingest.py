@@ -267,12 +267,12 @@ class IngestPipeline:
         """Update an existing bundle when same stable_id + same platform.
 
         Re-runs LLM for response_meta and bundle_meta, regenerates derived files
-        (MD, _bundle.md), refreshes DB via upsert_bundle (ON CONFLICT UPDATE),
-        and refreshes ChromaDB (delete old chunks + upsert new).
-
-        All LLM calls happen before any disk writes to prevent partial state.
+        (MD, _bundle.md), refreshes DB and ChromaDB. Preserves other platforms'
+        responses in multi-platform bundles by using add_response_to_bundle()
+        (ON CONFLICT UPDATE) instead of upsert_bundle().
         """
         bundle_id = existing_bundle["bundle_id"]
+        all_platforms = existing_bundle["platforms"]
         bundle_dir = self._kb_path / "bundles" / bundle_id
         raw_dir = bundle_dir / "_raw"
 
@@ -281,71 +281,83 @@ class IngestPipeline:
             bundle_id, file_path.name, conv.meta.platform,
         )
 
-        # 1. Build response summaries and validate
-        response_summaries = self._build_response_summaries(conv)
-        if len(response_summaries.strip()) < MIN_CONTENT_LENGTH:
+        # 1. Copy raw file first (replaces old version; needed for summary collection)
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(file_path, raw_dir / file_path.name)
+
+        # 2. Collect response summaries from ALL raw files (includes updated content)
+        all_summaries = self._collect_all_response_summaries(raw_dir)
+        if len(all_summaries.strip()) < MIN_CONTENT_LENGTH:
             logger.warning(
                 "Response summaries too short (%d chars), skipping update %s",
-                len(response_summaries.strip()), file_path.name,
+                len(all_summaries.strip()), file_path.name,
             )
             return {
                 "status": "skip_insufficient_content",
                 "reason": "Response summaries too short",
             }
 
-        # 2. LLM: Generate bundle meta
+        # 3. LLM: Generate bundle meta with ALL platforms' content
         bundle_meta = self._meta_gen.generate_bundle_meta(
             question=question,
-            platforms=[conv.meta.platform],
-            response_summaries=response_summaries,
+            platforms=all_platforms,
+            response_summaries=all_summaries,
             available_domains=self._domains,
             available_topics=self._topics,
         )
 
-        # 3. LLM: Generate response meta (before disk writes)
+        # 4. LLM: Generate response meta for current platform
         response_meta = self._meta_gen.generate_response_meta(
             platform=conv.meta.platform,
             content=self._get_assistant_content(conv),
         )
 
-        # 4. Disk writes: copy raw + write MD files
-        raw_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(file_path, raw_dir / file_path.name)
-
+        # 5. Write derived files (platform MD + _bundle.md with all platforms)
         frontmatter = response_meta.model_dump()
         md_path = bundle_dir / f"{conv.meta.platform}.md"
         write_md_file(conv, bundle_id, frontmatter, md_path)
 
-        self._write_bundle_md(bundle_dir, bundle_id, bundle_meta, conv)
+        self._write_bundle_md_multi(
+            bundle_dir, bundle_id, bundle_meta, question, all_platforms, conv,
+        )
 
-        # 5. DB: upsert_bundle with existing bundle_id (ON CONFLICT UPDATE)
+        # 6. DB: update meta + response (preserves other platforms' responses)
         if not self._dry_run:
-            self._repo.upsert_bundle(
+            self._repo.update_bundle_meta(
                 bundle_id=bundle_id,
-                kb=self._kb_name,
-                question=question,
                 summary=bundle_meta.summary,
-                created_at=conv.meta.exported_at,
-                response_count=self._count_responses(conv),
-                path=f"bundles/{bundle_id}",
-                question_hash=question_hash,
-                stable_id=stable_id,
                 domains=bundle_meta.domains,
                 topics=bundle_meta.topics,
                 pending_topics=bundle_meta.pending_topics,
-                responses=[{
-                    "platform": conv.meta.platform,
-                    "model": response_meta.model,
-                    "turn_count": conv.turn_count,
-                    "source_path": str(file_path),
-                }],
+                question=question,
+                question_hash=question_hash,
+                source_path=str(file_path),
+            )
+            self._repo.add_response_to_bundle(
+                bundle_id=bundle_id,
+                platform=conv.meta.platform,
+                model=response_meta.model,
+                turn_count=conv.turn_count,
                 source_path=str(file_path),
             )
 
-            # 6. ChromaDB: delete old chunks, then upsert new
+            # 7. ChromaDB: delete all chunks, re-chunk from ALL raw files
             self._chunk_store.delete_by_bundle(bundle_id)
 
-            full_text = conversation_to_markdown(conv, bundle_id)
+            full_texts = []
+            for ext in sorted(SUPPORTED_EXTENSIONS):
+                for raw_file in sorted(raw_dir.glob(f"*{ext}")):
+                    try:
+                        raw_conv = parse_file(raw_file)
+                        full_texts.append(
+                            conversation_to_markdown(raw_conv, bundle_id)
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to parse raw file for rechunking: %s",
+                            raw_file,
+                        )
+            full_text = "\n\n".join(full_texts)
             chunks = chunk_text(full_text)
             chunk_data = prepare_chunks_for_chromadb(
                 chunks,
