@@ -16,15 +16,15 @@ __all__ = [
     "read_text_with_fallback",
 ]
 
-# Encoding fallback chain: UTF-8 (with BOM) → CP949 (Korean legacy) → Latin-1 (always succeeds)
-_FALLBACK_ENCODINGS = ("utf-8-sig", "cp949", "latin-1")
+# Encoding fallback chain (strict): UTF-8 (with BOM) → CP949 (Korean legacy)
+_FALLBACK_ENCODINGS = ("utf-8-sig", "cp949")
 
 
 def read_text_with_fallback(path: Path) -> str:
     """Read a text file, trying multiple encodings.
 
     Tries UTF-8 (with BOM support) first, then CP949 (Korean legacy superset of EUC-KR),
-    then Latin-1 (always succeeds as a last resort).
+    then UTF-8 with errors='replace' for mostly-UTF-8 files with a few corrupted bytes.
     """
     raw = path.read_bytes()
     for encoding in _FALLBACK_ENCODINGS:
@@ -32,5 +32,6 @@ def read_text_with_fallback(path: Path) -> str:
             return raw.decode(encoding)
         except (UnicodeDecodeError, ValueError):
             continue
-    # latin-1 never fails, so this is unreachable, but just in case:
-    return raw.decode("latin-1")  # pragma: no cover
+    # Last resort: UTF-8 with replacement characters for corrupted bytes.
+    # Preferable to latin-1 for Korean content (preserves valid Korean characters).
+    return raw.decode("utf-8", errors="replace")

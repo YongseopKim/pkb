@@ -24,7 +24,11 @@ def create_embedder(config: EmbeddingConfig) -> Embedder:
         from pkb.embedding.tei_client import TEIClient
         from pkb.embedding.tei_embedder import TEIEmbedder
 
-        client = TEIClient(base_url=config.tei_url, timeout=config.tei_timeout)
+        client = TEIClient(
+            base_url=config.tei_url,
+            timeout=config.tei_timeout,
+            max_concurrent=config.tei_max_concurrent,
+        )
         return TEIEmbedder(
             client=client,
             model_name=config.model_name,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import urllib.request
 
@@ -11,18 +12,30 @@ logger = logging.getLogger(__name__)
 
 
 class TEIClient:
-    """Low-level HTTP client for TEI /embed endpoint."""
+    """Low-level HTTP client for TEI /embed endpoint.
+
+    Uses a threading.Semaphore to limit concurrent HTTP requests to the TEI server.
+    This prevents overloading TEI when multiple ingest workers call embed() simultaneously
+    (each running in its own thread via asyncio.to_thread).
+    """
 
     def __init__(
-        self, base_url: str, timeout: float = 120.0, max_retries: int = 3,
+        self,
+        base_url: str,
+        timeout: float = 120.0,
+        max_retries: int = 3,
+        max_concurrent: int = 2,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._max_retries = max_retries
+        self._max_concurrent = max_concurrent
+        self._semaphore = threading.Semaphore(max_concurrent)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Send texts to TEI and return embedding vectors.
 
+        Acquires the concurrency semaphore before making the HTTP request.
         Retries on TimeoutError up to max_retries times with exponential backoff.
 
         API: POST {base_url}/embed
@@ -42,6 +55,7 @@ class TEIClient:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
+            self._semaphore.acquire()
             try:
                 resp = urllib.request.urlopen(req, timeout=self._timeout)
                 if resp.status != 200:
@@ -59,6 +73,8 @@ class TEIClient:
                         attempt + 1, self._max_retries, wait,
                     )
                     time.sleep(wait)
+            finally:
+                self._semaphore.release()
 
         raise TimeoutError(
             f"TEI embedding timed out after {self._max_retries} attempts "

@@ -140,7 +140,7 @@ class Reindexer:
                 texts.append(body)
             except ValueError:
                 # File without frontmatter — read whole content
-                texts.append(md_file.read_text(encoding="utf-8"))
+                texts.append(md_file.read_text(encoding="utf-8", errors="replace"))
 
         full_text = "\n\n".join(texts)
         if not full_text.strip():

@@ -56,7 +56,7 @@ class ReembedEngine:
                     "error": "No MD files found in bundle directory"}
 
         full_text = "\n\n".join(
-            f.read_text(encoding="utf-8") for f in md_files
+            f.read_text(encoding="utf-8", errors="replace") for f in md_files
         )
 
         # Get metadata from DB for chunk metadata

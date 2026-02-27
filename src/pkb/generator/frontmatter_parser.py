@@ -39,7 +39,7 @@ def parse_frontmatter(md_path: Path) -> dict:
     Raises:
         ValueError: If frontmatter is missing or malformed.
     """
-    text = md_path.read_text(encoding="utf-8")
+    text = md_path.read_text(encoding="utf-8", errors="replace")
     fm_yaml, _ = _split_frontmatter(text)
     result = yaml.safe_load(fm_yaml)
     return result if result is not None else {}
@@ -57,6 +57,6 @@ def parse_md_body(md_path: Path) -> str:
     Raises:
         ValueError: If frontmatter is missing or malformed.
     """
-    text = md_path.read_text(encoding="utf-8")
+    text = md_path.read_text(encoding="utf-8", errors="replace")
     _, body = _split_frontmatter(text)
     return body
