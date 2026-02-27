@@ -45,7 +45,7 @@ class TestCreateDefaultConfig:
         create_default_config(config_path)
         config = load_config(config_path)
         assert config.meta_llm.model == "claude-haiku-4-5-20251001"
-        assert config.embedding.chunk_size == 512
+        assert config.embedding.chunk_size == 1500
 
     def test_default_config_has_llm_section(self, tmp_path: Path):
         """Generated config.yaml should include the llm section."""

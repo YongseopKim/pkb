@@ -210,12 +210,12 @@ llm:                               # New multi-provider config (takes priority o
     chat: 1
     escalation: true
 embedding:
-  chunk_size: 512
-  chunk_overlap: 50
-  mode: server                    # "server" (ChromaDB default) | "tei" (client-side via TEI)
-  model_name: ""                  # Model identifier (stored in collection metadata)
-  dimensions: 0                   # Vector dimensions (0=server auto)
-  tei_url: http://localhost:8080  # TEI server URL (mode=tei only)
+  chunk_size: 1500
+  chunk_overlap: 200
+  mode: tei                       # "server" (ChromaDB default) | "tei" (client-side via TEI)
+  model_name: BAAI/bge-m3         # Model identifier (stored in collection metadata)
+  dimensions: 1024                # Vector dimensions (0=server auto)
+  tei_url: http://localhost:8090  # TEI server URL (mode=tei only)
   tei_batch_size: 32              # TEI batch size
   tei_timeout: 30.0               # TEI request timeout (seconds)
 database:

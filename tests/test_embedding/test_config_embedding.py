@@ -8,21 +8,21 @@ from pkb.models.config import EmbeddingConfig, PKBConfig
 class TestEmbeddingConfigDefaults:
     """기본값으로 하위 호환성 보장."""
 
-    def test_default_mode_is_server(self):
+    def test_default_mode_is_tei(self):
         config = EmbeddingConfig()
-        assert config.mode == "server"
+        assert config.mode == "tei"
 
-    def test_default_model_name_empty(self):
+    def test_default_model_name(self):
         config = EmbeddingConfig()
-        assert config.model_name == ""
+        assert config.model_name == "BAAI/bge-m3"
 
-    def test_default_dimensions_zero(self):
+    def test_default_dimensions(self):
         config = EmbeddingConfig()
-        assert config.dimensions == 0
+        assert config.dimensions == 1024
 
     def test_default_tei_url(self):
         config = EmbeddingConfig()
-        assert config.tei_url == "http://localhost:8080"
+        assert config.tei_url == "http://localhost:8090"
 
     def test_default_tei_batch_size(self):
         config = EmbeddingConfig()
@@ -32,10 +32,10 @@ class TestEmbeddingConfigDefaults:
         config = EmbeddingConfig()
         assert config.tei_timeout == 30.0
 
-    def test_chunk_size_and_overlap_unchanged(self):
+    def test_chunk_size_and_overlap_defaults(self):
         config = EmbeddingConfig()
-        assert config.chunk_size == 512
-        assert config.chunk_overlap == 50
+        assert config.chunk_size == 1500
+        assert config.chunk_overlap == 200
 
 
 class TestEmbeddingConfigTEI:
@@ -67,8 +67,8 @@ class TestEmbeddingConfigInPKBConfig:
 
     def test_pkbconfig_embedding_defaults(self):
         config = PKBConfig()
-        assert config.embedding.mode == "server"
-        assert config.embedding.model_name == ""
+        assert config.embedding.mode == "tei"
+        assert config.embedding.model_name == "BAAI/bge-m3"
 
     def test_pkbconfig_with_tei_embedding(self):
         config = PKBConfig(embedding=EmbeddingConfig(
@@ -85,7 +85,7 @@ class TestEmbeddingConfigYAMLRoundtrip:
     """YAML 직렬화/역직렬화 호환성."""
 
     def test_legacy_yaml_without_new_fields(self, tmp_path):
-        """기존 config.yaml에 새 필드가 없어도 로드 가능."""
+        """기존 config.yaml에 새 필드가 없어도 로드 가능 (기본값 적용)."""
         data = {
             "embedding": {
                 "chunk_size": 512,
@@ -96,8 +96,10 @@ class TestEmbeddingConfigYAMLRoundtrip:
         p.write_text(yaml.dump(data))
         raw = yaml.safe_load(p.read_text())
         config = PKBConfig(**raw)
-        assert config.embedding.mode == "server"
-        assert config.embedding.model_name == ""
+        assert config.embedding.chunk_size == 512
+        assert config.embedding.chunk_overlap == 50
+        assert config.embedding.mode == "tei"
+        assert config.embedding.model_name == "BAAI/bge-m3"
 
     def test_full_tei_yaml(self, tmp_path):
         """TEI 전체 설정이 포함된 YAML 로드."""

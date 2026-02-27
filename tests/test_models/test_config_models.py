@@ -66,8 +66,8 @@ class TestMetaLLMConfig:
 class TestEmbeddingConfig:
     def test_defaults(self):
         config = EmbeddingConfig()
-        assert config.chunk_size == 512
-        assert config.chunk_overlap == 50
+        assert config.chunk_size == 1500
+        assert config.chunk_overlap == 200
 
     def test_no_model_field(self):
         """EmbeddingConfig no longer has a model field (server-side embedding)."""
@@ -147,7 +147,7 @@ class TestPKBConfig:
         config = PKBConfig()
         assert config.knowledge_bases == []
         assert config.meta_llm.provider == "anthropic"
-        assert config.embedding.chunk_size == 512
+        assert config.embedding.chunk_size == 1500
 
     def test_database_config_present(self):
         config = PKBConfig()

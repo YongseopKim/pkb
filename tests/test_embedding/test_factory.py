@@ -31,7 +31,9 @@ class TestCreateEmbedder:
         with pytest.raises(ValueError, match="Unknown embedding mode"):
             create_embedder(config)
 
-    def test_default_config_returns_server_side(self):
+    def test_default_config_returns_tei(self):
+        """Default config is now TEI (bge-m3)."""
         config = EmbeddingConfig()
         embedder = create_embedder(config)
-        assert isinstance(embedder, ServerSideEmbedder)
+        assert isinstance(embedder, TEIEmbedder)
+        assert embedder.model_name == "BAAI/bge-m3"

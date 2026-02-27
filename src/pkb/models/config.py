@@ -47,12 +47,12 @@ class EmbeddingConfig(BaseModel):
         "tei"    — PKB calls a TEI server and sends pre-computed embeddings to ChromaDB.
     """
 
-    chunk_size: int = 512
-    chunk_overlap: int = 50
-    mode: str = "server"
-    model_name: str = ""
-    dimensions: int = 0
-    tei_url: str = "http://localhost:8080"
+    chunk_size: int = 1500
+    chunk_overlap: int = 200
+    mode: str = "tei"
+    model_name: str = "BAAI/bge-m3"
+    dimensions: int = 1024
+    tei_url: str = "http://localhost:8090"
     tei_batch_size: int = 32
     tei_timeout: float = 30.0
 

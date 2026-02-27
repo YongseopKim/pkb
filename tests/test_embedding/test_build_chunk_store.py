@@ -39,8 +39,16 @@ class TestBuildChunkStore:
         assert isinstance(store, ChunkStore)
         assert store._use_client_side is True
 
-    def test_default_config_returns_server_mode(self):
+    def test_default_config_returns_tei_mode(self):
+        """Default config is now TEI (bge-m3)."""
         config = PKBConfig()
-        with patch("pkb.db.chromadb_client.chromadb.HttpClient", return_value=MagicMock()):
+        mock_client = MagicMock()
+        mock_collection = MagicMock()
+        mock_collection.metadata = {
+            "embedding_model": "BAAI/bge-m3",
+            "embedding_dimensions": 1024,
+        }
+        mock_client.get_or_create_collection.return_value = mock_collection
+        with patch("pkb.db.chromadb_client.chromadb.HttpClient", return_value=mock_client):
             store = build_chunk_store(config)
-        assert not store._use_client_side
+        assert store._use_client_side is True

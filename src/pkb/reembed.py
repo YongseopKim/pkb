@@ -30,8 +30,8 @@ class ReembedEngine:
         kb_name: str,
         chunk_store: ChunkStore,
         repo: BundleRepository,
-        chunk_size: int = 512,
-        chunk_overlap: int = 50,
+        chunk_size: int = 1500,
+        chunk_overlap: int = 200,
     ) -> None:
         self._kb_path = Path(kb_path)
         self._kb_name = kb_name

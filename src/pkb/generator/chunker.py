@@ -3,7 +3,7 @@
 import re
 
 
-def chunk_text(text: str, chunk_size: int = 512, overlap: int = 50) -> list[str]:
+def chunk_text(text: str, chunk_size: int = 1500, overlap: int = 200) -> list[str]:
     """Split text into chunks respecting sentence boundaries.
 
     Args:
