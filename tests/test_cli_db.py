@@ -111,11 +111,43 @@ class TestDbDowngrade:
 
 
 class TestDbCurrent:
+    @patch("pkb.db.migration_runner.get_table_schema")
     @patch("pkb.db.migration_runner.get_current")
-    def test_current(self, mock_current, runner, mock_dsn):
+    def test_current(self, mock_current, mock_schema, runner, mock_dsn):
+        mock_schema.return_value = {}
         result = runner.invoke(cli, ["db", "current"])
         assert result.exit_code == 0
         mock_current.assert_called_once_with(mock_dsn)
+        mock_schema.assert_called_once_with(mock_dsn)
+
+    @patch("pkb.db.migration_runner.get_table_schema")
+    @patch("pkb.db.migration_runner.get_current")
+    def test_current_shows_table_columns(self, mock_current, mock_schema, runner, mock_dsn):
+        mock_schema.return_value = {
+            "bundles": [
+                {"column": "id", "type": "text", "nullable": "NO", "default": None},
+                {"column": "kb", "type": "text", "nullable": "NO", "default": None},
+                {"column": "stable_id", "type": "text", "nullable": "NO", "default": None},
+            ],
+            "bundle_responses": [
+                {"column": "id", "type": "integer", "nullable": "NO", "default": "nextval(...)"},
+            ],
+        }
+        result = runner.invoke(cli, ["db", "current"])
+        assert result.exit_code == 0
+        assert "bundles" in result.output
+        assert "stable_id" in result.output
+        assert "bundle_responses" in result.output
+        assert "3 columns" in result.output
+        assert "1 column" in result.output
+
+    @patch("pkb.db.migration_runner.get_table_schema")
+    @patch("pkb.db.migration_runner.get_current")
+    def test_current_empty_schema(self, mock_current, mock_schema, runner, mock_dsn):
+        mock_schema.return_value = {}
+        result = runner.invoke(cli, ["db", "current"])
+        assert result.exit_code == 0
+        assert "No tables" in result.output
 
 
 class TestDbHistory:

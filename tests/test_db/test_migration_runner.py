@@ -8,6 +8,7 @@ from pkb.db.migration_runner import (
     _should_stamp,
     get_current,
     get_history,
+    get_table_schema,
     run_downgrade,
     run_stamp,
     run_upgrade,
@@ -119,3 +120,61 @@ class TestGetHistory:
     def test_get_history(self, mock_cmd):
         get_history("postgresql://user:pw@host/db")
         mock_cmd.history.assert_called_once()
+
+
+class TestGetTableSchema:
+    @patch("pkb.db.migration_runner.create_engine")
+    def test_returns_dict_of_tables(self, mock_engine_fn):
+        """Returns {table_name: [columns]} for PKB tables."""
+        mock_conn = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        mock_engine_fn.return_value = mock_engine
+
+        mock_conn.execute.return_value.fetchall.return_value = [
+            ("bundles", "id", "text", "NO", None),
+            ("bundles", "kb", "text", "NO", None),
+            ("bundles", "stable_id", "text", "NO", None),
+            ("bundle_responses", "id", "integer", "NO", "nextval(...)"),
+        ]
+
+        result = get_table_schema("postgresql://user:pw@host/db")
+
+        assert "bundles" in result
+        assert len(result["bundles"]) == 3
+        assert result["bundles"][0]["column"] == "id"
+        assert result["bundles"][0]["type"] == "text"
+        assert result["bundles"][0]["nullable"] == "NO"
+        assert "bundle_responses" in result
+        assert len(result["bundle_responses"]) == 1
+
+    @patch("pkb.db.migration_runner.create_engine")
+    def test_empty_db_returns_empty_dict(self, mock_engine_fn):
+        """No PKB tables → empty dict."""
+        mock_conn = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        mock_engine_fn.return_value = mock_engine
+
+        mock_conn.execute.return_value.fetchall.return_value = []
+
+        result = get_table_schema("postgresql://user:pw@host/db")
+        assert result == {}
+
+    @patch("pkb.db.migration_runner.create_engine")
+    def test_excludes_alembic_version(self, mock_engine_fn):
+        """alembic_version table should not appear in schema output."""
+        mock_conn = MagicMock()
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
+        mock_engine_fn.return_value = mock_engine
+
+        mock_conn.execute.return_value.fetchall.return_value = [
+            ("bundles", "id", "text", "NO", None),
+        ]
+
+        result = get_table_schema("postgresql://user:pw@host/db")
+        assert "alembic_version" not in result

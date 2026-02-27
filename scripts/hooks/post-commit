@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#
+# post-commit — Auto patch bump + build after each commit
+#
+# Skips when:
+#   - PKB_SKIP_POST_COMMIT=1 (recursion guard)
+#   - Running inside rebase/merge/cherry-pick
+
+[ "$PKB_SKIP_POST_COMMIT" = "1" ] && exit 0
+
+# Skip during rebase / merge / cherry-pick
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+[ -d "$REPO_ROOT/.git/rebase-merge" ] && exit 0
+[ -d "$REPO_ROOT/.git/rebase-apply" ] && exit 0
+[ -f "$REPO_ROOT/.git/MERGE_HEAD" ] && exit 0
+[ -f "$REPO_ROOT/.git/CHERRY_PICK_HEAD" ] && exit 0
+
+echo ""
+echo "── post-commit: running release.sh patch ──"
+"$REPO_ROOT/scripts/release.sh" patch

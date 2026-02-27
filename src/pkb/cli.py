@@ -1588,11 +1588,26 @@ def downgrade(revision: str) -> None:
 
 @db.command()
 def current() -> None:
-    """Show current database revision."""
-    from pkb.db.migration_runner import get_current
+    """Show current database revision and table schema."""
+    from pkb.db.migration_runner import get_current, get_table_schema
 
     dsn = _load_dsn()
     get_current(dsn)
+
+    schema = get_table_schema(dsn)
+    if not schema:
+        click.echo("\nNo tables found.")
+        return
+
+    click.echo(f"\nTables ({len(schema)}):")
+    for table, columns in schema.items():
+        n = len(columns)
+        label = "column" if n == 1 else "columns"
+        click.echo(f"\n  {table} ({n} {label}):")
+        for col in columns:
+            null_str = "" if col["nullable"] == "NO" else " NULL"
+            default_str = f"  default={col['default']}" if col["default"] else ""
+            click.echo(f"    {col['column']:25s} {col['type']}{null_str}{default_str}")
 
 
 @db.command()

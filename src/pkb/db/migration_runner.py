@@ -101,6 +101,34 @@ def get_current(dsn: str) -> None:
     command.current(config)
 
 
+def get_table_schema(dsn: str) -> dict[str, list[dict]]:
+    """Query column info for all PKB tables (excludes alembic_version).
+
+    Returns ``{table_name: [{column, type, nullable, default}, ...]}``.
+    """
+    engine = create_engine(_ensure_psycopg3_dialect(dsn))
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT table_name, column_name, data_type, is_nullable, column_default "
+                "FROM information_schema.columns "
+                "WHERE table_schema = 'public' "
+                "  AND table_name != 'alembic_version' "
+                "ORDER BY table_name, ordinal_position"
+            )
+        ).fetchall()
+
+    schema: dict[str, list[dict]] = {}
+    for table, col, dtype, nullable, default in rows:
+        schema.setdefault(table, []).append({
+            "column": col,
+            "type": dtype,
+            "nullable": nullable,
+            "default": default,
+        })
+    return schema
+
+
 def get_history(dsn: str) -> None:
     """Display the migration history."""
     config = _make_alembic_config(dsn)
