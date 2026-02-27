@@ -1700,6 +1700,91 @@ def migrate_domain(old_domain: str, new_domain: str) -> None:
     repo.close()
 
 
+@db.command("migrate-stable-id")
+@click.option("--kb", default=None, help="Specific KB to migrate.")
+@click.option("--dry-run", is_flag=True, help="Preview without writing.")
+def migrate_stable_id(kb: str | None, dry_run: bool) -> None:
+    """Recompute stable_id for existing bundles from raw files."""
+    from pkb.config import get_pkb_home, load_config
+    from pkb.constants import CONFIG_FILENAME
+    from pkb.db.postgres import BundleRepository
+    from pkb.ingest import compute_stable_id
+    from pkb.parser.directory import SUPPORTED_EXTENSIONS, parse_file
+
+    pkb_home = get_pkb_home()
+    config = load_config(pkb_home / CONFIG_FILENAME)
+
+    try:
+        repo = BundleRepository(config.database.postgres)
+    except Exception as e:
+        raise click.ClickException(f"Database connection failed: {e}")
+
+    bundle_ids = repo.list_all_bundle_ids(kb=kb)
+
+    click.echo(f"Migrating stable_id for {len(bundle_ids)} bundles...")
+    if dry_run:
+        click.echo("(dry run — no DB writes)")
+
+    updated = 0
+    skipped = 0
+    errors = 0
+
+    for bid in bundle_ids:
+        bundle_info = repo.get_bundle_by_id(bid)
+        if not bundle_info:
+            skipped += 1
+            continue
+
+        # Find KB entry for this bundle
+        kb_entry = None
+        for entry in config.knowledge_bases:
+            if entry.name == bundle_info.get("kb"):
+                kb_entry = entry
+                break
+        if not kb_entry:
+            skipped += 1
+            continue
+
+        kb_path = Path(kb_entry.path).expanduser()
+        raw_dir = kb_path / "bundles" / bid / "_raw"
+
+        if not raw_dir.exists():
+            click.echo(f"  SKIP: {bid} (no _raw directory)")
+            skipped += 1
+            continue
+
+        # Parse first available raw file
+        raw_files: list[Path] = []
+        for ext in sorted(SUPPORTED_EXTENSIONS):
+            raw_files.extend(sorted(raw_dir.glob(f"*{ext}")))
+
+        if not raw_files:
+            click.echo(f"  SKIP: {bid} (no raw files)")
+            skipped += 1
+            continue
+
+        try:
+            conv = parse_file(raw_files[0])
+            new_stable_id = compute_stable_id(conv)
+
+            if dry_run:
+                click.echo(f"  {bid}: {new_stable_id[:12]}...")
+            else:
+                with repo._get_conn() as conn:
+                    conn.execute(
+                        "UPDATE bundles SET stable_id = %s WHERE id = %s",
+                        (new_stable_id, bid),
+                    )
+                click.echo(f"  OK: {bid}")
+            updated += 1
+        except Exception as e:
+            click.echo(f"  ERROR: {bid} — {e}")
+            errors += 1
+
+    click.echo(f"\nDone: {updated} updated, {skipped} skipped, {errors} errors")
+    repo.close()
+
+
 @cli.command()
 @click.option("--kb", default=None, help="Knowledge base name filter.")
 @click.option("--domain", is_flag=True, default=False, help="Show domain distribution detail.")

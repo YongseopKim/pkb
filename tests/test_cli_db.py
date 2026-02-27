@@ -245,3 +245,214 @@ class TestDbMigrateDomain:
                 cli, ["db", "migrate-domain", "coding", "dev"],
             )
         assert result.exit_code != 0
+
+
+@pytest.fixture
+def mock_stable_id_config(tmp_path, monkeypatch):
+    """Mock PKB config with a KB that has bundles with _raw files."""
+    pkb_home = tmp_path / ".pkb"
+    pkb_home.mkdir()
+    monkeypatch.setenv("PKB_HOME", str(pkb_home))
+
+    kb_path = tmp_path / "kb-personal"
+    kb_path.mkdir()
+
+    # Create bundle with _raw directory and a JSONL file
+    bundle_dir = kb_path / "bundles" / "20260101-test-a1b2"
+    raw_dir = bundle_dir / "_raw"
+    raw_dir.mkdir(parents=True)
+    (raw_dir / "claude.jsonl").write_text(
+        '{"_meta":true,"platform":"claude","url":"https://claude.ai/chat/abc123",'
+        '"exported_at":"2026-01-01T00:00:00Z","title":"Test"}\n'
+        '{"role":"user","content":"Hello","timestamp":"2026-01-01T00:00:01Z"}\n'
+        '{"role":"assistant","content":"Hi there","timestamp":"2026-01-01T00:00:02Z"}\n'
+    )
+
+    # Create bundle without _raw directory
+    bundle_no_raw = kb_path / "bundles" / "20260102-no-raw-c3d4"
+    bundle_no_raw.mkdir(parents=True)
+
+    # Create bundle with empty _raw directory
+    bundle_empty_raw = kb_path / "bundles" / "20260103-empty-e5f6"
+    raw_empty = bundle_empty_raw / "_raw"
+    raw_empty.mkdir(parents=True)
+
+    config_yaml = pkb_home / "config.yaml"
+    config_yaml.write_text(
+        f"knowledge_bases:\n"
+        f"  - name: personal\n"
+        f"    path: {kb_path}\n"
+        f"database:\n"
+        f"  postgres:\n"
+        f"    host: testhost\n"
+        f"    port: 5432\n"
+        f"    database: testdb\n"
+        f"    username: testuser\n"
+        f"    password: testpw\n"
+    )
+    return kb_path
+
+
+class TestDbMigrateStableId:
+    def test_dry_run_shows_preview(self, runner, mock_stable_id_config):
+        """--dry-run shows preview without DB writes."""
+        mock_conn = MagicMock()
+
+        with patch("pkb.db.postgres.psycopg.connect", return_value=mock_conn):
+            with patch(
+                "pkb.db.postgres.BundleRepository.list_all_bundle_ids",
+                return_value=["20260101-test-a1b2"],
+            ):
+                with patch(
+                    "pkb.db.postgres.BundleRepository.get_bundle_by_id",
+                    return_value={"bundle_id": "20260101-test-a1b2", "kb": "personal"},
+                ):
+                    result = runner.invoke(
+                        cli,
+                        ["db", "migrate-stable-id", "--kb", "personal", "--dry-run"],
+                    )
+
+        assert result.exit_code == 0
+        assert "dry run" in result.output.lower()
+        assert "20260101-test-a1b2" in result.output
+        assert "1 updated" in result.output
+        # No DB write should happen in dry run
+        mock_conn.execute.assert_not_called()
+
+    def test_updates_stable_id_for_bundles(self, runner, mock_stable_id_config):
+        """Recomputes stable_id from raw files and writes to DB."""
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+
+        with patch("pkb.db.postgres.psycopg.connect", return_value=mock_conn):
+            with patch(
+                "pkb.db.postgres.BundleRepository.list_all_bundle_ids",
+                return_value=["20260101-test-a1b2"],
+            ):
+                with patch(
+                    "pkb.db.postgres.BundleRepository.get_bundle_by_id",
+                    return_value={"bundle_id": "20260101-test-a1b2", "kb": "personal"},
+                ):
+                    result = runner.invoke(
+                        cli,
+                        ["db", "migrate-stable-id", "--kb", "personal"],
+                    )
+
+        assert result.exit_code == 0
+        assert "OK" in result.output
+        assert "1 updated" in result.output
+        # Verify SQL UPDATE was called
+        mock_conn.execute.assert_called()
+        call_args = mock_conn.execute.call_args
+        assert "UPDATE bundles SET stable_id" in call_args[0][0]
+
+    def test_skips_bundles_without_raw_dir(self, runner, mock_stable_id_config):
+        """Bundles without _raw/ directory are skipped."""
+        mock_conn = MagicMock()
+
+        with patch("pkb.db.postgres.psycopg.connect", return_value=mock_conn):
+            with patch(
+                "pkb.db.postgres.BundleRepository.list_all_bundle_ids",
+                return_value=["20260102-no-raw-c3d4"],
+            ):
+                with patch(
+                    "pkb.db.postgres.BundleRepository.get_bundle_by_id",
+                    return_value={"bundle_id": "20260102-no-raw-c3d4", "kb": "personal"},
+                ):
+                    result = runner.invoke(
+                        cli,
+                        ["db", "migrate-stable-id", "--kb", "personal"],
+                    )
+
+        assert result.exit_code == 0
+        assert "SKIP" in result.output
+        assert "1 skipped" in result.output
+
+    def test_skips_bundles_with_empty_raw_dir(self, runner, mock_stable_id_config):
+        """Bundles with empty _raw/ directory are skipped."""
+        mock_conn = MagicMock()
+
+        with patch("pkb.db.postgres.psycopg.connect", return_value=mock_conn):
+            with patch(
+                "pkb.db.postgres.BundleRepository.list_all_bundle_ids",
+                return_value=["20260103-empty-e5f6"],
+            ):
+                with patch(
+                    "pkb.db.postgres.BundleRepository.get_bundle_by_id",
+                    return_value={"bundle_id": "20260103-empty-e5f6", "kb": "personal"},
+                ):
+                    result = runner.invoke(
+                        cli,
+                        ["db", "migrate-stable-id", "--kb", "personal"],
+                    )
+
+        assert result.exit_code == 0
+        assert "SKIP" in result.output
+        assert "no raw files" in result.output.lower()
+
+    def test_skips_bundles_with_unknown_kb(self, runner, mock_stable_id_config):
+        """Bundles whose KB is not in config are skipped."""
+        mock_conn = MagicMock()
+
+        with patch("pkb.db.postgres.psycopg.connect", return_value=mock_conn):
+            with patch(
+                "pkb.db.postgres.BundleRepository.list_all_bundle_ids",
+                return_value=["20260101-test-a1b2"],
+            ):
+                with patch(
+                    "pkb.db.postgres.BundleRepository.get_bundle_by_id",
+                    return_value={"bundle_id": "20260101-test-a1b2", "kb": "unknown-kb"},
+                ):
+                    result = runner.invoke(
+                        cli,
+                        ["db", "migrate-stable-id"],
+                    )
+
+        assert result.exit_code == 0
+        assert "1 skipped" in result.output
+
+    def test_handles_parse_error(self, runner, mock_stable_id_config):
+        """Parse errors are counted and reported."""
+        kb_path = mock_stable_id_config
+        # Write invalid JSONL to trigger a parse error
+        raw_dir = kb_path / "bundles" / "20260101-test-a1b2" / "_raw"
+        (raw_dir / "claude.jsonl").write_text("not valid json\n")
+
+        mock_conn = MagicMock()
+
+        with patch("pkb.db.postgres.psycopg.connect", return_value=mock_conn):
+            with patch(
+                "pkb.db.postgres.BundleRepository.list_all_bundle_ids",
+                return_value=["20260101-test-a1b2"],
+            ):
+                with patch(
+                    "pkb.db.postgres.BundleRepository.get_bundle_by_id",
+                    return_value={"bundle_id": "20260101-test-a1b2", "kb": "personal"},
+                ):
+                    result = runner.invoke(
+                        cli,
+                        ["db", "migrate-stable-id", "--kb", "personal"],
+                    )
+
+        assert result.exit_code == 0
+        assert "ERROR" in result.output
+        assert "1 error" in result.output.lower()
+
+    def test_db_connection_failure(self, runner, mock_stable_id_config):
+        """DB 연결 실패."""
+        with patch(
+            "pkb.db.postgres.psycopg.connect",
+            side_effect=Exception("Connection refused"),
+        ):
+            result = runner.invoke(
+                cli, ["db", "migrate-stable-id"],
+            )
+        assert result.exit_code != 0
+        assert "Database connection failed" in result.output
+
+    def test_help_shows_migrate_stable_id(self, runner):
+        """help에 migrate-stable-id 표시."""
+        result = runner.invoke(cli, ["db", "--help"])
+        assert result.exit_code == 0
+        assert "migrate-stable-id" in result.output
