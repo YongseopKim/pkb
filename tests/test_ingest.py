@@ -1887,3 +1887,186 @@ class TestStableIdUpdateBehavior:
         parts = bundle_md.split("---")
         meta = yaml.safe_load(parts[1])
         assert set(meta["platforms"]) == {"claude", "chatgpt"}
+
+
+class TestPostIngestIntegration:
+    """PostIngestProcessor integration with IngestPipeline."""
+
+    @pytest.fixture
+    def mock_deps(self, tmp_path):
+        """Create mocked dependencies for IngestPipeline."""
+        repo = MagicMock()
+        repo.find_bundle_by_stable_id.return_value = None
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+        meta_gen.generate_response_meta.return_value = MagicMock(
+            platform="claude",
+            model="claude-sonnet",
+            summary="응답 요약",
+            key_claims=["주장1"],
+            stance="informative",
+            model_dump=MagicMock(return_value={
+                "platform": "claude",
+                "model": "claude-sonnet",
+                "summary": "응답 요약",
+                "key_claims": ["주장1"],
+                "stance": "informative",
+            }),
+        )
+        meta_gen.generate_bundle_meta.return_value = MagicMock(
+            summary="번들 요약",
+            slug="test-slug",
+            domains=["dev"],
+            topics=["python"],
+            pending_topics=[],
+            consensus=None,
+            divergence=None,
+            model_dump=MagicMock(return_value={
+                "summary": "번들 요약",
+                "slug": "test-slug",
+                "domains": ["dev"],
+                "topics": ["python"],
+                "pending_topics": [],
+                "consensus": None,
+                "divergence": None,
+            }),
+        )
+        kb_path = tmp_path / "kb-test"
+        kb_path.mkdir()
+        return {
+            "repo": repo,
+            "chunk_store": chunk_store,
+            "meta_gen": meta_gen,
+            "kb_path": kb_path,
+            "kb_name": "test",
+        }
+
+    @pytest.fixture
+    def mock_post_ingest(self):
+        """Create a mock PostIngestProcessor."""
+        post_ingest = MagicMock()
+        post_ingest.process.return_value = MagicMock(
+            new_relations=2, new_dedup_pairs=0, gap_topics=[],
+        )
+        return post_ingest
+
+    @pytest.fixture
+    def sample_jsonl(self, tmp_path):
+        """Create a sample JSONL file."""
+        jsonl_path = tmp_path / "source" / "claude.jsonl"
+        jsonl_path.parent.mkdir(parents=True)
+        lines = [
+            json.dumps({
+                "_meta": True,
+                "platform": "claude",
+                "url": "https://claude.ai/chat/post-ingest-test",
+                "exported_at": "2026-02-21T06:00:00.000Z",
+                "title": "테스트 대화",
+            }),
+            json.dumps({
+                "role": "user",
+                "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T06:00:01.000Z",
+            }),
+            json.dumps({
+                "role": "assistant",
+                "content": _ASYNC_ANSWER,
+                "timestamp": "2026-02-21T06:00:02.000Z",
+            }),
+        ]
+        jsonl_path.write_text("\n".join(lines), encoding="utf-8")
+        return jsonl_path
+
+    def test_ingest_calls_post_ingest_on_new_bundle(
+        self, mock_deps, mock_post_ingest, sample_jsonl,
+    ):
+        """새 번들 생성 후 post_ingest.process()가 bundle_id와 함께 호출."""
+        pipeline = IngestPipeline(
+            repo=mock_deps["repo"],
+            chunk_store=mock_deps["chunk_store"],
+            meta_gen=mock_deps["meta_gen"],
+            kb_path=mock_deps["kb_path"],
+            kb_name=mock_deps["kb_name"],
+            domains=["dev"],
+            topics=["python"],
+            post_ingest=mock_post_ingest,
+        )
+
+        result = pipeline.ingest_file(sample_jsonl, force=True)
+
+        assert result is not None
+        assert "bundle_id" in result
+        mock_post_ingest.process.assert_called_once_with(result["bundle_id"])
+
+    def test_ingest_skips_post_ingest_on_skip(
+        self, mock_deps, mock_post_ingest, tmp_path,
+    ):
+        """skip 상태 반환 시 post_ingest.process()가 호출되지 않음."""
+        pipeline = IngestPipeline(
+            repo=mock_deps["repo"],
+            chunk_store=mock_deps["chunk_store"],
+            meta_gen=mock_deps["meta_gen"],
+            kb_path=mock_deps["kb_path"],
+            kb_name=mock_deps["kb_name"],
+            domains=["dev"],
+            topics=["python"],
+            post_ingest=mock_post_ingest,
+        )
+
+        # Create a file with insufficient content → triggers skip
+        md_file = tmp_path / "chatgpt.md"
+        md_file.write_text(
+            "# [ChatGPT](https://chatgpt.com/c/abc)\n\n## LLM 응답 1\n\nShort.",
+        )
+
+        result = pipeline.ingest_file(md_file)
+
+        assert result is not None
+        assert result["status"] == "skip_insufficient_content"
+        mock_post_ingest.process.assert_not_called()
+
+    def test_ingest_works_without_post_ingest(
+        self, mock_deps, sample_jsonl,
+    ):
+        """post_ingest=None (기본값) 시 정상 동작 (하위 호환성)."""
+        pipeline = IngestPipeline(
+            repo=mock_deps["repo"],
+            chunk_store=mock_deps["chunk_store"],
+            meta_gen=mock_deps["meta_gen"],
+            kb_path=mock_deps["kb_path"],
+            kb_name=mock_deps["kb_name"],
+            domains=["dev"],
+            topics=["python"],
+        )
+
+        result = pipeline.ingest_file(sample_jsonl, force=True)
+
+        assert result is not None
+        assert "bundle_id" in result
+        # No error — pipeline completes successfully without post_ingest
+        mock_deps["repo"].upsert_bundle.assert_called_once()
+
+    def test_post_ingest_failure_does_not_crash_ingest(
+        self, mock_deps, sample_jsonl,
+    ):
+        """post_ingest.process()가 예외를 던져도 ingest는 성공 반환."""
+        failing_post_ingest = MagicMock()
+        failing_post_ingest.process.side_effect = RuntimeError("post-ingest boom")
+
+        pipeline = IngestPipeline(
+            repo=mock_deps["repo"],
+            chunk_store=mock_deps["chunk_store"],
+            meta_gen=mock_deps["meta_gen"],
+            kb_path=mock_deps["kb_path"],
+            kb_name=mock_deps["kb_name"],
+            domains=["dev"],
+            topics=["python"],
+            post_ingest=failing_post_ingest,
+        )
+
+        result = pipeline.ingest_file(sample_jsonl, force=True)
+
+        assert result is not None
+        assert "bundle_id" in result
+        # post_ingest.process was called (and raised), but ingest succeeded
+        failing_post_ingest.process.assert_called_once()

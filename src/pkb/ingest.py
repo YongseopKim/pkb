@@ -1,14 +1,20 @@
 """PKB ingest pipeline — JSONL to organized bundle."""
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import yaml
+
+if TYPE_CHECKING:
+    from pkb.post_ingest import PostIngestProcessor
 
 from pkb.constants import DONE_DIR_NAME
 from pkb.db.chromadb_client import ChunkStore
@@ -156,6 +162,7 @@ class IngestPipeline:
         domains: list[str],
         topics: list[str],
         dry_run: bool = False,
+        post_ingest: PostIngestProcessor | None = None,
     ) -> None:
         self._repo = repo
         self._chunk_store = chunk_store
@@ -165,6 +172,7 @@ class IngestPipeline:
         self._domains = domains
         self._topics = topics
         self._dry_run = dry_run
+        self._post_ingest = post_ingest
         # Per-stable_id locks to prevent TOCTOU race in concurrent ingest
         self._hash_locks: dict[str, threading.Lock] = {}
         self._hash_locks_mutex = threading.Lock()
@@ -175,6 +183,14 @@ class IngestPipeline:
             if stable_id not in self._hash_locks:
                 self._hash_locks[stable_id] = threading.Lock()
             return self._hash_locks[stable_id]
+
+    def _run_post_ingest(self, bundle_id: str) -> None:
+        """Run post-ingest processing if configured."""
+        if self._post_ingest and not self._dry_run:
+            try:
+                self._post_ingest.process(bundle_id)
+            except Exception:
+                logger.warning("Post-ingest failed for %s", bundle_id, exc_info=True)
 
     def ingest_file(self, file_path: Path, *, force: bool = False) -> dict | None:
         """Ingest a single input file (JSONL or MD) into the knowledge base.
@@ -371,6 +387,8 @@ class IngestPipeline:
             )
             self._chunk_store.upsert_chunks(chunk_data)
 
+        self._run_post_ingest(bundle_id)
+
         return {
             "bundle_id": bundle_id,
             "platform": conv.meta.platform,
@@ -484,6 +502,8 @@ class IngestPipeline:
             )
             self._chunk_store.upsert_chunks(chunk_data)
 
+        self._run_post_ingest(bundle_id)
+
         return {
             "bundle_id": bundle_id,
             "platform": conv.meta.platform,
@@ -582,6 +602,8 @@ class IngestPipeline:
                 },
             )
             self._chunk_store.upsert_chunks(chunk_data)
+
+        self._run_post_ingest(bundle_id)
 
         return {
             "bundle_id": bundle_id,
