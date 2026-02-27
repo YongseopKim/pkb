@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pkb"
-version = "0.12.0"
+version = "0.12.1"
 description = "Private Knowledge Base — multi-LLM conversation organizer"
 requires-python = ">=3.11"
 dependencies = [
