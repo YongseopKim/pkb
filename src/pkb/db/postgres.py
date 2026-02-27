@@ -75,6 +75,7 @@ class BundleRepository:
         responses: list[dict],
         pending_topics: list[str] | None = None,
         source_path: str | None = None,
+        stable_id: str | None = None,
     ) -> None:
         """Insert or update a bundle and its related data."""
         with self._get_conn() as conn:
@@ -82,14 +83,16 @@ class BundleRepository:
             conn.execute(
                 """
                 INSERT INTO bundles (id, kb, question, summary, created_at, response_count, path,
-                                     question_hash, source_path, meta_version)
+                                     question_hash, stable_id, source_path, meta_version)
                 VALUES (%(id)s, %(kb)s, %(question)s, %(summary)s, %(created_at)s,
-                        %(response_count)s, %(path)s, %(question_hash)s, %(source_path)s, 1)
+                        %(response_count)s, %(path)s, %(question_hash)s, %(stable_id)s,
+                        %(source_path)s, 1)
                 ON CONFLICT (id) DO UPDATE SET
                     summary = EXCLUDED.summary,
                     updated_at = NOW(),
                     response_count = EXCLUDED.response_count,
                     question_hash = EXCLUDED.question_hash,
+                    stable_id = COALESCE(EXCLUDED.stable_id, bundles.stable_id),
                     source_path = EXCLUDED.source_path
                 """,
                 {
@@ -101,6 +104,7 @@ class BundleRepository:
                     "response_count": response_count,
                     "path": path,
                     "question_hash": question_hash,
+                    "stable_id": stable_id,
                     "source_path": source_path,
                 },
             )
@@ -732,6 +736,50 @@ class BundleRepository:
         """
         with self._get_conn() as conn:
             row = conn.execute(sql, (question_hash,)).fetchone()
+        if row is None:
+            return None
+        platforms = [p for p in row[3].split(",") if p] if row[3] else []
+        domains = [d for d in row[4].split(",") if d] if row[4] else []
+        topics = [t for t in row[5].split(",") if t] if row[5] else []
+        return {
+            "bundle_id": row[0],
+            "kb": row[1],
+            "path": row[2],
+            "platforms": platforms,
+            "domains": domains,
+            "topics": topics,
+        }
+
+    def find_bundle_by_stable_id(self, stable_id: str) -> dict | None:
+        """Find a bundle by stable_id, including its platforms.
+
+        Used for content-based bundle lookup: stable_id is derived from
+        conversation content and remains constant across re-ingestion.
+
+        Returns dict with bundle_id, kb, path, platforms (list), domains, topics,
+        or None if not found.
+        """
+        sql = """
+            SELECT b.id, b.kb, b.path,
+                   COALESCE(
+                       (SELECT string_agg(br.platform, ',') FROM bundle_responses br
+                        WHERE br.bundle_id = b.id), ''
+                   ) AS platforms,
+                   COALESCE(
+                       (SELECT string_agg(bd.domain, ',') FROM bundle_domains bd
+                        WHERE bd.bundle_id = b.id), ''
+                   ) AS domains,
+                   COALESCE(
+                       (SELECT string_agg(bt.topic, ',') FROM bundle_topics bt
+                        WHERE bt.bundle_id = b.id AND bt.is_pending = FALSE), ''
+                   ) AS topics
+            FROM bundles b
+            LEFT JOIN bundle_responses br ON br.bundle_id = b.id
+            WHERE b.stable_id = %s
+            LIMIT 1
+        """
+        with self._get_conn() as conn:
+            row = conn.execute(sql, (stable_id,)).fetchone()
         if row is None:
             return None
         platforms = [p for p in row[3].split(",") if p] if row[3] else []

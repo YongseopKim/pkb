@@ -22,6 +22,7 @@ def _seed_bundles(repo):
             response_count=1,
             path=f"/bundles/{bid}",
             question_hash=f"hash_{bid}",
+            stable_id=f"stable_{bid}",
             domains=["dev"],
             topics=["python"],
             responses=[{"platform": "claude", "model": "haiku", "turn_count": 1}],
@@ -124,6 +125,7 @@ class TestFindBundlesSharingTopics:
             question="Q1", summary="S1",
             created_at=datetime(2026, 1, 1),
             response_count=1, path="/a", question_hash="h1",
+            stable_id="stable_h1",
             domains=["dev"], topics=["python", "async"],
             responses=[{"platform": "claude", "model": "m", "turn_count": 1}],
         )
@@ -132,6 +134,7 @@ class TestFindBundlesSharingTopics:
             question="Q2", summary="S2",
             created_at=datetime(2026, 1, 1),
             response_count=1, path="/b", question_hash="h2",
+            stable_id="stable_h2",
             domains=["dev"], topics=["python", "testing"],
             responses=[{"platform": "claude", "model": "m", "turn_count": 1}],
         )
@@ -148,6 +151,7 @@ class TestFindBundlesSharingTopics:
             question="Q1", summary="S1",
             created_at=datetime(2026, 1, 1),
             response_count=1, path="/a", question_hash="h1",
+            stable_id="stable_h1_self",
             domains=["dev"], topics=["python"],
             responses=[{"platform": "claude", "model": "m", "turn_count": 1}],
         )

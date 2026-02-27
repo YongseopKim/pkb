@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS bundles (
     meta_version INTEGER DEFAULT 1,
     path TEXT NOT NULL,
     question_hash TEXT,
+    stable_id TEXT NOT NULL,
     source_path TEXT,
     tsv tsvector
 );
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS bundles (
 CREATE INDEX IF NOT EXISTS idx_bundles_tsv ON bundles USING GIN (tsv);
 CREATE INDEX IF NOT EXISTS idx_bundles_kb ON bundles (kb);
 CREATE INDEX IF NOT EXISTS idx_bundles_question_hash ON bundles (question_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bundles_stable_id ON bundles (stable_id);
 CREATE INDEX IF NOT EXISTS idx_bundles_source_path ON bundles (source_path);
 
 -- Domain mapping (L1, M:N)

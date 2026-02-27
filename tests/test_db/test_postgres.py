@@ -637,6 +637,49 @@ class TestDeduplicateTopicsAndDomains:
         assert len(domain_inserts) == 2
 
 
+class TestFindBundleByStableId:
+    """find_bundle_by_stable_id(): stable_id로 번들 조회."""
+
+    def test_find_bundle_by_stable_id_returns_none_when_not_found(self, repo, mock_conn):
+        """존재하지 않는 stable_id는 None 반환."""
+        mock_conn.execute.return_value.fetchone.return_value = None
+        result = repo.find_bundle_by_stable_id("nonexistent-stable-id")
+        assert result is None
+
+    def test_find_bundle_by_stable_id_finds_existing(self, repo, mock_conn):
+        """stable_id로 번들 찾기."""
+        mock_conn.execute.return_value.fetchone.return_value = (
+            "20260221-test-a3f2", "personal", "bundles/20260221-test-a3f2",
+            "claude", "dev", "python",
+        )
+        result = repo.find_bundle_by_stable_id("abc123-stable")
+        assert result is not None
+        assert result["bundle_id"] == "20260221-test-a3f2"
+        assert result["kb"] == "personal"
+        assert result["path"] == "bundles/20260221-test-a3f2"
+
+    def test_find_bundle_by_stable_id_returns_platforms_domains_topics(self, repo, mock_conn):
+        """platforms, domains, topics가 리스트로 반환."""
+        mock_conn.execute.return_value.fetchone.return_value = (
+            "20260221-test-a3f2", "personal", "bundles/20260221-test-a3f2",
+            "claude,chatgpt", "dev,ai", "python,llm",
+        )
+        result = repo.find_bundle_by_stable_id("abc123-stable")
+        assert result is not None
+        assert result["platforms"] == ["claude", "chatgpt"]
+        assert result["domains"] == ["dev", "ai"]
+        assert result["topics"] == ["python", "llm"]
+
+    def test_find_bundle_by_stable_id_uses_correct_sql(self, repo, mock_conn):
+        """SQL이 stable_id를 사용."""
+        mock_conn.execute.return_value.fetchone.return_value = None
+        repo.find_bundle_by_stable_id("abc123-stable")
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "stable_id" in sql
+        assert "bundle_responses" in sql
+
+
 class TestRenameDomain:
     def test_rename_returns_affected_count(self, repo, mock_conn):
         """도메인 이름 변경 시 영향받은 행 수를 반환."""
