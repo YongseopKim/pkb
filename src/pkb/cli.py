@@ -91,9 +91,8 @@ def ingest(path: str, kb: str, dry_run: bool) -> None:
 
     PATH can be a single .jsonl/.md file or a directory of input files.
     """
-    from pkb.config import build_llm_router, get_pkb_home, load_config
+    from pkb.config import build_chunk_store, build_llm_router, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.generator.meta_gen import MetaGenerator
     from pkb.ingest import IngestPipeline, move_to_done
@@ -126,7 +125,7 @@ def ingest(path: str, kb: str, dry_run: bool) -> None:
     # Initialize services
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         if dry_run:
             click.echo(f"[dry-run] DB connection skipped: {e}")
@@ -223,9 +222,8 @@ def batch(source_dir: str, kb: str, no_resume: bool, max_files: int, workers: in
     Use --workers to enable concurrent processing.
     """
     from pkb.batch import BatchProcessor
-    from pkb.config import build_llm_router, get_pkb_home, load_config
+    from pkb.config import build_chunk_store, build_llm_router, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.generator.meta_gen import MetaGenerator
     from pkb.ingest import IngestPipeline
@@ -258,7 +256,7 @@ def batch(source_dir: str, kb: str, no_resume: bool, max_files: int, workers: in
             repo = BundleRepository.from_pool(config.database.postgres, concurrency)
         else:
             repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -560,9 +558,8 @@ def dedup() -> None:
 @click.option("--kb", default=None, help="Knowledge base name filter.")
 def dedup_scan(kb: str | None) -> None:
     """Scan bundles for duplicates using embedding similarity."""
-    from pkb.config import get_pkb_home, load_config
+    from pkb.config import build_chunk_store, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.dedup import DuplicateDetector
 
@@ -571,7 +568,7 @@ def dedup_scan(kb: str | None) -> None:
 
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -695,9 +692,8 @@ def relate() -> None:
 )
 def relate_scan(kb: str | None, relation_type: str) -> None:
     """Scan bundles to discover relations (similar/related)."""
-    from pkb.config import get_pkb_home, load_config
+    from pkb.config import build_chunk_store, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.relations import RelationBuilder
 
@@ -706,7 +702,7 @@ def relate_scan(kb: str | None, relation_type: str) -> None:
 
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -829,9 +825,8 @@ def search(
     import json as json_mod
     from datetime import date as date_cls
 
-    from pkb.config import get_pkb_home, load_config
+    from pkb.config import build_chunk_store, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.search.engine import SearchEngine
     from pkb.search.models import SearchMode, SearchQuery
@@ -841,7 +836,7 @@ def search(
 
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -906,9 +901,8 @@ def reindex(bundle_id: str | None, kb: str, full: bool) -> None:
 
     Reindex a single BUNDLE_ID or use --full to reindex everything.
     """
-    from pkb.config import get_pkb_home, load_config
+    from pkb.config import build_chunk_store, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.reindex import Reindexer
 
@@ -931,7 +925,7 @@ def reindex(bundle_id: str | None, kb: str, full: bool) -> None:
 
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -973,9 +967,8 @@ def regenerate(bundle_id: str | None, kb: str, all_bundles: bool, dry_run: bool)
     Re-runs LLM meta extraction with current prompts/model.
     Provide BUNDLE_ID for a single bundle, or use --all.
     """
-    from pkb.config import build_llm_router, get_pkb_home, load_config
+    from pkb.config import build_chunk_store, build_llm_router, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.generator.meta_gen import MetaGenerator
     from pkb.regenerate import Regenerator
@@ -1004,7 +997,7 @@ def regenerate(bundle_id: str | None, kb: str, all_bundles: bool, dry_run: bool)
 
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         if dry_run:
             click.echo(f"[dry-run] DB connection skipped: {e}")
@@ -1235,9 +1228,8 @@ def watch(kb: str | None) -> None:
     import asyncio
     import signal
 
-    from pkb.config import build_llm_router, get_pkb_home, load_config
+    from pkb.config import build_chunk_store, build_llm_router, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.engine import EventCollector, IngestEngine
     from pkb.generator.meta_gen import MetaGenerator
@@ -1271,7 +1263,7 @@ def watch(kb: str | None) -> None:
     # Use connection pool for concurrent watch mode
     try:
         repo = BundleRepository.from_pool(config.database.postgres, concurrency)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -1394,9 +1386,8 @@ def digest(topic: str | None, domain: str | None, kb: str | None, output: str | 
     if not topic and not domain:
         raise click.ClickException("Specify --topic or --domain")
 
-    from pkb.config import build_llm_router, get_pkb_home, load_config
+    from pkb.config import build_chunk_store, build_llm_router, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.digest import DigestEngine
     from pkb.search.engine import SearchEngine
@@ -1406,7 +1397,7 @@ def digest(topic: str | None, domain: str | None, kb: str | None, output: str | 
 
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -1454,9 +1445,8 @@ def chat(kb: str | None, mode: str) -> None:
     """
     from pkb.chat.engine import ChatEngine
     from pkb.chat.models import ChatSession
-    from pkb.config import build_llm_router, get_pkb_home, load_config
+    from pkb.config import build_chunk_store, build_llm_router, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.search.engine import SearchEngine
 
@@ -1465,7 +1455,7 @@ def chat(kb: str | None, mode: str) -> None:
 
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -1521,9 +1511,8 @@ def web(port: int, host: str) -> None:
     import uvicorn
 
     from pkb.chat.engine import ChatEngine
-    from pkb.config import build_llm_router, get_pkb_home, load_config
+    from pkb.config import build_chunk_store, build_llm_router, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
     from pkb.search.engine import SearchEngine
     from pkb.web.app import create_app
@@ -1534,7 +1523,7 @@ def web(port: int, host: str) -> None:
 
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -1643,9 +1632,8 @@ def reset(kb: str) -> None:
     """
     import shutil
 
-    from pkb.config import get_pkb_home, load_config
+    from pkb.config import build_chunk_store, get_pkb_home, load_config
     from pkb.constants import CONFIG_FILENAME
-    from pkb.db.chromadb_client import ChunkStore
     from pkb.db.postgres import BundleRepository
 
     pkb_home = get_pkb_home()
@@ -1674,7 +1662,7 @@ def reset(kb: str) -> None:
     # Connect to DBs
     try:
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
     except Exception as e:
         raise click.ClickException(f"Database connection failed: {e}")
 
@@ -1821,6 +1809,99 @@ def report(period: str, kb: str | None, output: str | None) -> None:
         click.echo(f"Saved to {output}")
     else:
         click.echo(content)
+
+    repo.close()
+
+
+@cli.command()
+@click.argument("bundle_id", required=False, default=None)
+@click.option("--kb", required=True, help="Knowledge base name (from config).")
+@click.option("--all", "all_bundles", is_flag=True, help="Re-embed all bundles.")
+@click.option(
+    "--fresh", is_flag=True,
+    help="Drop and recreate collection before re-embedding (use with --all).",
+)
+def reembed(
+    bundle_id: str | None, kb: str, all_bundles: bool, fresh: bool,
+) -> None:
+    """Re-embed bundles with current embedding model.
+
+    Use after changing the embedding model in config.yaml.
+    Provide BUNDLE_ID for a single bundle, or use --all.
+    --fresh drops the collection and recreates it (recommended for model changes).
+    """
+    from pkb.config import build_chunk_store, get_pkb_home, load_config
+    from pkb.constants import CONFIG_FILENAME
+    from pkb.db.postgres import BundleRepository
+    from pkb.reembed import ReembedEngine
+
+    if not bundle_id and not all_bundles:
+        raise click.ClickException("Provide a BUNDLE_ID or use --all.")
+
+    if fresh and not all_bundles:
+        raise click.ClickException("--fresh can only be used with --all.")
+
+    pkb_home = get_pkb_home()
+    config = load_config(pkb_home / CONFIG_FILENAME)
+
+    kb_entry = None
+    for entry in config.knowledge_bases:
+        if entry.name == kb:
+            kb_entry = entry
+            break
+    if kb_entry is None:
+        raise click.ClickException(
+            f"Knowledge base '{kb}' not found in config. "
+            f"Available: {[e.name for e in config.knowledge_bases]}"
+        )
+
+    repo = BundleRepository(config.database.postgres)
+    chunk_store = build_chunk_store(config)
+
+    engine = ReembedEngine(
+        kb_path=kb_entry.path,
+        kb_name=kb_entry.name,
+        chunk_store=chunk_store,
+        repo=repo,
+        chunk_size=config.embedding.chunk_size,
+        chunk_overlap=config.embedding.chunk_overlap,
+    )
+
+    if fresh:
+        confirm = click.prompt(
+            f"This will DELETE and recreate the ChromaDB collection. "
+            f"Type the KB name '{kb}' to confirm"
+        )
+        if confirm != kb:
+            raise click.ClickException("Confirmation mismatch — aborted.")
+
+        def _progress(bid, status):
+            click.echo(f"  [{status}] {bid}")
+
+        stats = engine.reembed_collection_fresh(progress_callback=_progress)
+        click.echo(
+            f"\nDone (fresh): {stats['reembedded']} reembedded, "
+            f"{stats['errors']} errors (total: {stats['total']})"
+        )
+    elif all_bundles:
+        def _progress(bid, status):
+            click.echo(f"  [{status}] {bid}")
+
+        stats = engine.reembed_all(progress_callback=_progress)
+        click.echo(
+            f"\nDone: {stats['reembedded']} reembedded, "
+            f"{stats['errors']} errors (total: {stats['total']})"
+        )
+    else:
+        result = engine.reembed_bundle(bundle_id)
+        if result["status"] == "reembedded":
+            click.echo(
+                f"Reembedded {result['bundle_id']} ({result.get('chunks', 0)} chunks)"
+            )
+        else:
+            raise click.ClickException(
+                f"Failed: {result.get('error', 'unknown error')}"
+            )
 
     repo.close()
 

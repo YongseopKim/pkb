@@ -12,6 +12,7 @@ from pkb.constants import DEFAULT_PKB_HOME
 from pkb.models.config import PKBConfig
 
 if TYPE_CHECKING:
+    from pkb.db.chromadb_client import ChunkStore
     from pkb.llm.router import LLMRouter
 
 
@@ -44,6 +45,20 @@ def build_llm_router(config: PKBConfig) -> LLMRouter:
     return _LLMRouter.from_meta_llm(config.meta_llm)
 
 
+def build_chunk_store(config: PKBConfig) -> ChunkStore:
+    """Build a ChunkStore with the appropriate embedder based on config."""
+    from pkb.db.chromadb_client import ChunkStore as _ChunkStore
+    from pkb.embedding.factory import create_embedder
+
+    embedder = create_embedder(config.embedding)
+
+    from pkb.embedding.server_side import ServerSideEmbedder
+    if isinstance(embedder, ServerSideEmbedder):
+        return _ChunkStore(config.database.chromadb)
+
+    return _ChunkStore(config.database.chromadb, embedder=embedder)
+
+
 def create_default_config(path: Path) -> None:
     """Create a default config.yaml file."""
     config = PKBConfig()
@@ -58,6 +73,12 @@ def create_default_config(path: Path) -> None:
         "embedding": {
             "chunk_size": config.embedding.chunk_size,
             "chunk_overlap": config.embedding.chunk_overlap,
+            "mode": config.embedding.mode,
+            "model_name": config.embedding.model_name,
+            "dimensions": config.embedding.dimensions,
+            "tei_url": config.embedding.tei_url,
+            "tei_batch_size": config.embedding.tei_batch_size,
+            "tei_timeout": config.embedding.tei_timeout,
         },
         "database": {
             "postgres": {

@@ -50,7 +50,7 @@
 | AD-02 | Bundle ID 형식 | `YYYYMMDD-slug-hash4` | Obsidian 파일 탐색에서 사람이 읽기 쉬움 |
 | AD-03 | 메타데이터 저장 | 각 MD에 frontmatter + `_bundle.md`(aggregate) | Obsidian Dataview 호환 + aggregate 메타는 한 곳에만 |
 | AD-04 | 태그 계층 | 2-tier (L1 Domain 8개 + L2 Topic) | L3 Facet은 벡터 검색이 대체. MVP 복잡도 통제. 초기 10개→8개 통합 |
-| AD-05 | VectorDB | ~~LanceDB~~ → **ChromaDB (원격)** | 서버측 임베딩, HTTP API. DB를 별도 PC에서 운영 |
+| AD-05 | VectorDB | ~~LanceDB~~ → **ChromaDB (원격)** | 서버측 임베딩(기본) 또는 TEI 클라이언트측(bge-m3, 1024d). DB를 별도 PC에서 운영 |
 | AD-06 | 뷰어 도구 | Obsidian | Markdown + frontmatter 네이티브 지원, Dataview 플러그인 |
 | AD-07 | Input 포맷 | JSONL (exporter raw output) | MD compile 수동 단계 제거. 전체 MD가 derived가 되어 설계 단순화 |
 | AD-08 | 멀티-KB 아키텍처 | PKB(도구) + 여러 KB(데이터) 분리. 중앙 인덱싱 | KB별 독립 repo, vocab/index는 글로벌 |
@@ -150,7 +150,12 @@ llm:                               # Multi-provider config (takes priority over 
 embedding:
   chunk_size: 512
   chunk_overlap: 50
-  # 임베딩은 ChromaDB 서버측에서 처리 (로컬 모델 불필요)
+  mode: server              # "server" (ChromaDB 기본) | "tei" (클라이언트측)
+  model_name: ""            # TEI 모드시: "BAAI/bge-m3"
+  dimensions: 0             # TEI 모드시: 1024
+  tei_url: "http://localhost:8080"
+  tei_batch_size: 32
+  tei_timeout: 30.0
 
 database:
   postgres:
@@ -175,7 +180,7 @@ concurrency:                      # Optional, all fields have defaults
   db_pool_max: 8
 ```
 
-> **구현 노트**: 설계 시점에는 SQLite + LanceDB + 로컬 bge-m3를 계획했으나, DB를 별도 PC에서 운영하기 위해 PostgreSQL(tsvector FTS) + ChromaDB(서버측 임베딩)으로 변경했다.
+> **구현 노트**: 설계 시점에는 SQLite + LanceDB + 로컬 bge-m3를 계획했으나, DB를 별도 PC에서 운영하기 위해 PostgreSQL(tsvector FTS) + ChromaDB(서버측 임베딩)으로 변경했다. 이후 HuggingFace TEI Docker(bge-m3, 1024d)를 배포하여 클라이언트측 임베딩 옵션을 추가했다. `embedding.mode=tei` 설정 시 PKB가 TEI로 벡터를 생성하고 ChromaDB에 pre-computed 임베딩을 전송한다. `pkb reembed --all --fresh`로 모델 변경 후 전체 재임베딩이 가능하다.
 
 ---
 

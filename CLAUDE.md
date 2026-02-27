@@ -15,7 +15,7 @@ PKB separates **tools** (this repo) from **data** (separate KB repos):
 ```
 pkb/                          <- This repo (tool)
 ├── src/pkb/                  <- Python package
-│   ├── cli.py                <- Click CLI (init, parse, ingest, batch, topics, search, reindex, regenerate, watch, dedup, relate, digest, stats, report, web, chat, mcp-serve, kb, db, doctor)
+│   ├── cli.py                <- Click CLI (init, parse, ingest, batch, topics, search, reindex, regenerate, reembed, watch, dedup, relate, digest, stats, report, web, chat, mcp-serve, kb, db, doctor)
 │   ├── config.py             <- Config loading
 │   ├── init.py               <- pkb init logic
 │   ├── ingest.py             <- IngestPipeline orchestrator
@@ -23,6 +23,7 @@ pkb/                          <- This repo (tool)
 │   ├── batch.py              <- BatchProcessor for bulk ingestion (sequential + concurrent)
 │   ├── reindex.py            <- Reindexer (sync _bundle.md edits to DB)
 │   ├── regenerate.py         <- Regenerator (re-run LLM meta extraction)
+│   ├── reembed.py            <- ReembedEngine (re-embed with new embedding model)
 │   ├── watcher.py            <- KBWatcher + AsyncFileEventHandler (watchdog auto-ingest)
 │   ├── dedup.py              <- DuplicateDetector (embedding similarity)
 │   ├── relations.py          <- RelationBuilder (knowledge graph edges)
@@ -35,6 +36,7 @@ pkb/                          <- This repo (tool)
 │   ├── constants.py          <- Platform names, path constants, skip filenames
 │   ├── models/               <- Pydantic models (jsonl, config, vocab, meta)
 │   ├── parser/               <- Input parsing (JSONL + MD, file + directory)
+│   ├── embedding/            <- Embedding abstraction (Embedder ABC, TEIEmbedder, factory)
 │   ├── db/                   <- Database layer (PostgreSQL + ChromaDB + Alembic migrations)
 │   ├── search/               <- Search engine (FTS + semantic + hybrid)
 │   ├── generator/            <- MD, meta, prompts, chunker, frontmatter_parser
@@ -43,7 +45,7 @@ pkb/                          <- This repo (tool)
 │   ├── chat/                 <- RAG chatbot engine (ChatEngine, context assembly)
 │   ├── web/                  <- FastAPI web UI (htmx, Jinja2 templates)
 │   └── data/                 <- Bundled seed data (domains, topics)
-├── tests/                    <- 934 tests (878 mock + 56 integration)
+├── tests/                    <- 1024 tests (968 mock + 56 integration)
 ├── prompts/                  <- LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 └── pyproject.toml
 
@@ -70,7 +72,7 @@ pkb/                          <- This repo (tool)
 - **Input**: JSONL and MD formats from llm-chat-exporter
 - **Meta LLM**: Multi-provider via LLMRouter (Anthropic, OpenAI, Google, Grok) with tier-based routing
 - **Structured DB**: PostgreSQL (remote, meta + FTS via tsvector/GIN)
-- **VectorDB**: ChromaDB (remote, server-side embedding)
+- **VectorDB**: ChromaDB (remote). Embedding: server-side (default) or client-side via TEI (bge-m3, 1024d)
 - **Viewer**: Obsidian with Dataview plugin
 - **Bundle ID**: `{YYYYMMDD}-{slug}-{hash4}` (e.g., `20260221-pkb-system-design-a3f2`)
 - **Tag system**: 2-tier — Domain (L1, 8 fixed) + Topic (L2, controlled vocab with pending workflow)
@@ -103,6 +105,9 @@ pkb reindex --full --kb <name>    # Full reindex + orphan cleanup
 pkb regenerate <id> --kb <name>   # Re-run LLM meta extraction from raw JSONL
 pkb regenerate --all --kb <name>  # Regenerate all bundles
 pkb regenerate <id> --dry-run     # Preview without DB writes
+pkb reembed <bundle_id> --kb <n>  # Re-embed single bundle with current model
+pkb reembed --all --kb <name>     # Re-embed all bundles
+pkb reembed --all --fresh --kb <name>  # Drop collection + re-embed all (model change)
 pkb watch                         # Watch all KB inboxes (recursive, success → .done/)
 pkb watch --kb <name>             # Watch specific KB inbox (subdirectory support)
 pkb dedup scan --kb <name>        # Scan for duplicate bundles
@@ -207,6 +212,12 @@ llm:                               # New multi-provider config (takes priority o
 embedding:
   chunk_size: 512
   chunk_overlap: 50
+  mode: server                    # "server" (ChromaDB default) | "tei" (client-side via TEI)
+  model_name: ""                  # Model identifier (stored in collection metadata)
+  dimensions: 0                   # Vector dimensions (0=server auto)
+  tei_url: http://localhost:8080  # TEI server URL (mode=tei only)
+  tei_batch_size: 32              # TEI batch size
+  tei_timeout: 30.0               # TEI request timeout (seconds)
 database:
   postgres:
     host: "192.168.1.100"
@@ -235,7 +246,7 @@ concurrency:                      # Optional, all fields have defaults
 ## Repository Contents
 
 - `src/pkb/` — Python package (Phase 0 through 7 implemented)
-- `tests/` — 934 tests (878 mock + 56 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, watcher, dedup, LLM routing, web, chat, kb, relations, digest, MCP server, analytics, doctor
+- `tests/` — 1024 tests (968 mock + 56 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, reembed, watcher, dedup, LLM routing, embedding, web, chat, kb, relations, digest, MCP server, analytics, doctor
 - `docker/` — Docker Compose for local test DB (PostgreSQL + ChromaDB)
 - `prompts/` — LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 - `docs/design-v1.md` — **Unified design document**. Single source of truth.

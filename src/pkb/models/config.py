@@ -40,10 +40,21 @@ class MetaLLMConfig(BaseModel):
 
 
 class EmbeddingConfig(BaseModel):
-    """Configuration for text chunking (embedding is server-side)."""
+    """Configuration for text chunking and embedding strategy.
+
+    mode:
+        "server" — ChromaDB computes embeddings server-side (default, backward compatible).
+        "tei"    — PKB calls a TEI server and sends pre-computed embeddings to ChromaDB.
+    """
 
     chunk_size: int = 512
     chunk_overlap: int = 50
+    mode: str = "server"
+    model_name: str = ""
+    dimensions: int = 0
+    tei_url: str = "http://localhost:8080"
+    tei_batch_size: int = 32
+    tei_timeout: float = 30.0
 
 
 class PostgresConfig(BaseModel):

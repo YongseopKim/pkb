@@ -18,9 +18,8 @@ _state: dict[str, Any] = {}
 def _get_state() -> dict[str, Any]:
     """Lazily initialise shared PKB state (config, repo, search, router)."""
     if "repo" not in _state:
-        from pkb.config import build_llm_router, get_pkb_home, load_config
+        from pkb.config import build_chunk_store, build_llm_router, get_pkb_home, load_config
         from pkb.constants import CONFIG_FILENAME
-        from pkb.db.chromadb_client import ChunkStore
         from pkb.db.postgres import BundleRepository
         from pkb.search.engine import SearchEngine
 
@@ -28,7 +27,7 @@ def _get_state() -> dict[str, Any]:
         config = load_config(pkb_home / CONFIG_FILENAME)
 
         repo = BundleRepository(config.database.postgres)
-        chunk_store = ChunkStore(config.database.chromadb)
+        chunk_store = build_chunk_store(config)
         search_engine = SearchEngine(repo=repo, chunk_store=chunk_store)
         router = build_llm_router(config)
 

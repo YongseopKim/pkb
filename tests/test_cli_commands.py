@@ -121,7 +121,7 @@ class TestSearchCommand:
     """
 
     @patch("pkb.search.engine.SearchEngine")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -142,7 +142,7 @@ class TestSearchCommand:
         assert "0.87" in result.output
 
     @patch("pkb.search.engine.SearchEngine")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -165,7 +165,7 @@ class TestSearchCommand:
         assert data[0]["bundle_id"] == "20260221-bitcoin-a3f2"
 
     @patch("pkb.search.engine.SearchEngine")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -199,7 +199,7 @@ class TestSearchCommand:
         assert call_args.limit == 5
 
     @patch("pkb.search.engine.SearchEngine")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -219,7 +219,7 @@ class TestSearchCommand:
         assert "no results" in result.output.lower() or "0" in result.output
 
     @patch("pkb.search.engine.SearchEngine")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -246,7 +246,7 @@ class TestSearchCommand:
         assert call_args.before == date(2026, 12, 31)
 
     @patch("pkb.search.engine.SearchEngine")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -266,7 +266,7 @@ class TestSearchCommand:
         assert "Q:" not in result.output
 
     @patch("pkb.search.engine.SearchEngine")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -316,7 +316,7 @@ def _create_bundle_on_disk(kb_path, bundle_id="20260101-test-abc1"):
 
 class TestReindexCommand:
     @patch("pkb.reindex.Reindexer")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -346,7 +346,7 @@ class TestReindexCommand:
         assert "updated" in result.output.lower()
 
     @patch("pkb.reindex.Reindexer")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -388,7 +388,7 @@ class TestReindexCommand:
 class TestRegenerateCommand:
     @patch("pkb.regenerate.Regenerator")
     @patch("pkb.generator.meta_gen.MetaGenerator")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.vocab.loader.load_topics")
     @patch("pkb.vocab.loader.load_domains")
@@ -426,7 +426,7 @@ class TestRegenerateCommand:
 
     @patch("pkb.regenerate.Regenerator")
     @patch("pkb.generator.meta_gen.MetaGenerator")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.vocab.loader.load_topics")
     @patch("pkb.vocab.loader.load_domains")
@@ -463,7 +463,7 @@ class TestRegenerateCommand:
 
     @patch("pkb.regenerate.Regenerator")
     @patch("pkb.generator.meta_gen.MetaGenerator")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.vocab.loader.load_topics")
     @patch("pkb.vocab.loader.load_domains")
@@ -645,7 +645,7 @@ class TestTopicsCommand:
 
 class TestDedupCommand:
     @patch("pkb.dedup.DuplicateDetector")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")
@@ -1278,7 +1278,7 @@ class TestSkipMovesToDone:
             patch("pkb.config.get_pkb_home") as mock_home,
             patch("pkb.config.load_config") as mock_config,
             patch("pkb.db.postgres.BundleRepository"),
-            patch("pkb.db.chromadb_client.ChunkStore"),
+            patch("pkb.config.build_chunk_store"),
             patch("pkb.config.build_llm_router"),
             patch("pkb.generator.meta_gen.MetaGenerator"),
             patch("pkb.ingest.IngestPipeline") as mock_pipeline_cls,
@@ -1397,7 +1397,7 @@ class TestIngestMoveToDone:
     @patch("pkb.ingest.IngestPipeline")
     @patch("pkb.config.build_llm_router")
     @patch("pkb.generator.meta_gen.MetaGenerator")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.vocab.loader.load_topics")
     @patch("pkb.vocab.loader.load_domains")
@@ -1441,7 +1441,7 @@ class TestBuildLLMRouterWiring:
     @patch("pkb.ingest.IngestPipeline")
     @patch("pkb.config.build_llm_router")
     @patch("pkb.generator.meta_gen.MetaGenerator")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.vocab.loader.load_topics")
     @patch("pkb.vocab.loader.load_domains")
@@ -1574,7 +1574,7 @@ class TestPeriodicRetryScan:
 
 class TestRelateCommand:
     @patch("pkb.relations.RelationBuilder")
-    @patch("pkb.db.chromadb_client.ChunkStore")
+    @patch("pkb.config.build_chunk_store")
     @patch("pkb.db.postgres.BundleRepository")
     @patch("pkb.config.load_config")
     @patch("pkb.config.get_pkb_home")

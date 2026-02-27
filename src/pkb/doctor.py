@@ -146,6 +146,71 @@ class DoctorRunner:
         except Exception as e:
             return CheckResult(label=label, ok=False, detail=str(e))
 
+    # --- TEI Embedding ---
+
+    def check_tei(self, config: PKBConfig) -> CheckResult | None:
+        """Check TEI server health (only when mode=tei)."""
+        if config.embedding.mode != "tei":
+            return None
+
+        from pkb.embedding.tei_client import TEIClient as _TEIClient
+        label = "TEI"
+        try:
+            client = _TEIClient(
+                base_url=config.embedding.tei_url,
+                timeout=config.embedding.tei_timeout,
+            )
+            if client.health_check():
+                return CheckResult(
+                    label=label,
+                    ok=True,
+                    detail=f"{config.embedding.tei_url} ({config.embedding.model_name})",
+                )
+            return CheckResult(
+                label=label,
+                ok=False,
+                detail=f"Health check failed: {config.embedding.tei_url}",
+            )
+        except Exception as e:
+            return CheckResult(label=label, ok=False, detail=str(e))
+
+    def check_embedding_consistency(self, config: PKBConfig) -> CheckResult | None:
+        """Check if collection's embedding model matches config (only when mode=tei)."""
+        if config.embedding.mode != "tei":
+            return None
+
+        label = "Embedding Model"
+        ch = config.database.chromadb
+        try:
+            client = chromadb.HttpClient(host=ch.host, port=ch.port)
+            collection = client.get_or_create_collection(name=ch.collection)
+            metadata = collection.metadata or {}
+
+            stored_model = metadata.get("embedding_model")
+            if not stored_model:
+                return CheckResult(
+                    label=label,
+                    ok=False,
+                    detail="Legacy collection — no model metadata. "
+                           "Run 'pkb reembed --all --fresh'",
+                )
+
+            if stored_model != config.embedding.model_name:
+                return CheckResult(
+                    label=label,
+                    ok=False,
+                    detail=f"Mismatch: collection='{stored_model}', "
+                           f"config='{config.embedding.model_name}'",
+                )
+
+            return CheckResult(
+                label=label,
+                ok=True,
+                detail=f"{stored_model} ({metadata.get('embedding_dimensions', '?')}d)",
+            )
+        except Exception as e:
+            return CheckResult(label=label, ok=False, detail=str(e))
+
     # --- LLM Providers ---
 
     def _resolve_api_key(
@@ -241,7 +306,16 @@ class DoctorRunner:
             results.append(self.check_postgres(config))
             results.append(self.check_chromadb(config))
 
-        # 4. LLM Providers
+        # 4. Embedding (TEI + consistency)
+        if not skip_db:
+            tei_result = self.check_tei(config)
+            if tei_result is not None:
+                results.append(tei_result)
+            consistency_result = self.check_embedding_consistency(config)
+            if consistency_result is not None:
+                results.append(consistency_result)
+
+        # 5. LLM Providers
         if not skip_llm:
             results.extend(self.check_llm_providers(config))
 
@@ -281,7 +355,21 @@ class DoctorRunner:
             ch.label = f"  {ch.label}"
             sections.append(SectionResult(header="Database", checks=[pg, ch]))
 
-        # 4. LLM Providers
+        # 4. Embedding (TEI + consistency)
+        if not skip_db:
+            embed_checks: list[CheckResult] = []
+            tei_result = self.check_tei(config)
+            if tei_result is not None:
+                tei_result.label = f"  {tei_result.label}"
+                embed_checks.append(tei_result)
+            consistency_result = self.check_embedding_consistency(config)
+            if consistency_result is not None:
+                consistency_result.label = f"  {consistency_result.label}"
+                embed_checks.append(consistency_result)
+            if embed_checks:
+                sections.append(SectionResult(header="Embedding", checks=embed_checks))
+
+        # 5. LLM Providers
         if not skip_llm:
             llm_checks = self.check_llm_providers(config)
             sections.append(SectionResult(header="LLM Providers", checks=llm_checks))
