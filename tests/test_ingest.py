@@ -1,5 +1,6 @@
 """Tests for the ingest pipeline."""
 
+import hashlib
 import json
 import threading
 from datetime import datetime, timezone
@@ -11,11 +12,14 @@ import yaml
 from pkb.constants import DONE_DIR_NAME
 from pkb.ingest import (
     IngestPipeline,
+    _normalize_url,
     compute_question_hash,
+    compute_stable_id,
     generate_bundle_id,
     generate_question_hash,
     move_to_done,
 )
+from pkb.models.jsonl import Conversation, ConversationMeta, Turn
 
 # Reusable test assistant content (>= 50 chars each)
 _ASYNC_ANSWER = (
@@ -1333,3 +1337,142 @@ class TestIngestGracefulSkip:
         # Should not raise
         result = pipeline.ingest_file(md_file)
         assert result["status"] == "skip_parse_error"
+
+
+class TestNormalizeUrl:
+    """Tests for _normalize_url() URL normalization."""
+
+    def test_strips_query_string(self):
+        """쿼리 스트링 제거."""
+        result = _normalize_url("https://claude.ai/chat/abc?ref=x")
+        assert result == "https://claude.ai/chat/abc"
+
+    def test_strips_fragment(self):
+        """프래그먼트(#) 제거."""
+        result = _normalize_url("https://claude.ai/chat/abc#section")
+        assert result == "https://claude.ai/chat/abc"
+
+    def test_strips_trailing_slash(self):
+        """경로 끝 슬래시 제거."""
+        result = _normalize_url("https://claude.ai/chat/abc/")
+        assert result == "https://claude.ai/chat/abc"
+
+    def test_lowercases_hostname(self):
+        """호스트명 소문자 변환."""
+        result = _normalize_url("https://Claude.AI/chat/abc")
+        assert result == "https://claude.ai/chat/abc"
+
+    def test_preserves_path_case(self):
+        """경로의 대소문자 보존 (conversation ID는 case-sensitive)."""
+        result = _normalize_url("https://claude.ai/chat/AbCdEf")
+        assert result == "https://claude.ai/chat/AbCdEf"
+
+    def test_combined_normalization(self):
+        """모든 정규화 규칙 동시 적용."""
+        result = _normalize_url("https://Claude.AI/chat/abc123/?utm_source=x#top")
+        assert result == "https://claude.ai/chat/abc123"
+
+
+class TestComputeStableId:
+    """Tests for compute_stable_id() stable conversation identity."""
+
+    def _make_conv(self, *, url=None, turns=None):
+        """Helper to create a Conversation for testing."""
+        meta = ConversationMeta(
+            platform="claude",
+            url=url,
+            exported_at=datetime(2026, 2, 21, 6, 0, 0),
+            title="Test",
+        )
+        if turns is None:
+            turns = []
+        return Conversation(meta=meta, turns=turns)
+
+    def _make_turns(self, n, *, content="Hello world"):
+        """Helper to create N turns."""
+        result = []
+        for i in range(n):
+            role = "user" if i % 2 == 0 else "assistant"
+            result.append(Turn(role=role, content=f"{content} {i}"))
+        return result
+
+    def test_url_based_stable_id(self):
+        """URL이 있으면 normalized URL의 SHA-256, 쿼리 다르면 같은 stable_id."""
+        conv1 = self._make_conv(url="https://claude.ai/chat/abc?ref=x")
+        conv2 = self._make_conv(url="https://claude.ai/chat/abc?ref=y")
+
+        sid1 = compute_stable_id(conv1)
+        sid2 = compute_stable_id(conv2)
+
+        assert len(sid1) == 64
+        assert sid1 == sid2
+
+        # Verify it's the SHA-256 of the normalized URL
+        expected = hashlib.sha256("https://claude.ai/chat/abc".encode("utf-8")).hexdigest()
+        assert sid1 == expected
+
+    def test_url_case_insensitive_host(self):
+        """호스트명 대소문자 무시하고 같은 stable_id."""
+        conv1 = self._make_conv(url="https://Claude.AI/chat/abc")
+        conv2 = self._make_conv(url="https://claude.ai/chat/abc")
+
+        assert compute_stable_id(conv1) == compute_stable_id(conv2)
+
+    def test_turn_fingerprint_fallback(self):
+        """URL이 없으면 처음 5개 turn으로 fallback."""
+        turns = self._make_turns(5)
+        conv = self._make_conv(turns=turns)
+
+        sid = compute_stable_id(conv)
+
+        assert len(sid) == 64
+        # Verify it's based on first 5 turns
+        fingerprint = "\n".join(
+            f"{t.role}:{t.content[:200]}" for t in turns[:5]
+        )
+        expected = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+        assert sid == expected
+
+    def test_turn_fingerprint_stable_with_more_turns(self):
+        """5개 이후 turn 추가해도 stable_id 불변."""
+        turns5 = self._make_turns(5)
+        turns8 = self._make_turns(5) + self._make_turns(3, content="Extra")
+
+        conv5 = self._make_conv(turns=turns5)
+        conv8 = self._make_conv(turns=turns8)
+
+        assert compute_stable_id(conv5) == compute_stable_id(conv8)
+
+    def test_turn_fingerprint_uses_content_prefix(self):
+        """각 turn의 content 처음 200자만 사용."""
+        long_content = "A" * 300
+        short_content = "A" * 200  # first 200 chars
+        turns_long = [Turn(role="user", content=long_content)]
+        turns_short = [Turn(role="user", content=short_content)]
+
+        conv_long = self._make_conv(turns=turns_long)
+        conv_short = self._make_conv(turns=turns_short)
+
+        assert compute_stable_id(conv_long) == compute_stable_id(conv_short)
+
+    def test_url_takes_priority_over_turns(self):
+        """URL 기반과 turn 기반 ID가 다름을 확인 (URL 우선)."""
+        turns = self._make_turns(3)
+        conv_with_url = self._make_conv(
+            url="https://claude.ai/chat/abc", turns=turns,
+        )
+        conv_no_url = self._make_conv(turns=turns)
+
+        sid_url = compute_stable_id(conv_with_url)
+        sid_turn = compute_stable_id(conv_no_url)
+
+        assert sid_url != sid_turn
+
+    def test_empty_conversation_fallback(self):
+        """turn이 없어도 유효한 64자 hex 반환."""
+        conv = self._make_conv()
+
+        sid = compute_stable_id(conv)
+
+        assert len(sid) == 64
+        assert all(c in "0123456789abcdef" for c in sid)

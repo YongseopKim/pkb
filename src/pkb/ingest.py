@@ -6,6 +6,7 @@ import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -97,6 +98,42 @@ def compute_question_hash(conv: Conversation) -> tuple[str, str]:
             break
     hash_input = assistant_text if assistant_text else ""
     return "", generate_question_hash(hash_input)
+
+
+def _normalize_url(url: str) -> str:
+    """Normalize a URL for stable_id generation.
+
+    - Strip query string and fragment
+    - Strip trailing slash from path
+    - Lowercase scheme and hostname
+    - Preserve path case (conversation IDs are case-sensitive)
+    """
+    parsed = urlparse(url)
+    # scheme and netloc are lowercased by urlparse for scheme,
+    # but netloc needs explicit lowering
+    scheme = parsed.scheme.lower()
+    netloc = parsed.netloc.lower()
+    path = parsed.path.rstrip("/")
+    return f"{scheme}://{netloc}{path}"
+
+
+def compute_stable_id(conv: Conversation) -> str:
+    """Compute a stable conversation identity hash (64-char hex SHA-256).
+
+    Priority 1: If conv.meta.url exists, SHA-256 of normalized URL.
+    Priority 2 (fallback): First 5 turns, each formatted as
+        '{role}:{content[:200]}', joined by newline, then SHA-256.
+    """
+    if conv.meta.url:
+        normalized = _normalize_url(conv.meta.url)
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+    # Fallback: fingerprint from first 5 turns
+    parts = []
+    for turn in conv.turns[:5]:
+        parts.append(f"{turn.role}:{turn.content[:200]}")
+    fingerprint = "\n".join(parts)
+    return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
 
 
 def generate_bundle_id(*, date: datetime, slug: str, question: str) -> str:
