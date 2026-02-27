@@ -125,6 +125,9 @@ class TestRegenerateBundle:
         call_kwargs = mock_repo.upsert_bundle.call_args[1]
         # The bundle should be upserted (ON CONFLICT will update meta_version)
         assert call_kwargs["bundle_id"] == "20260101-test-abc1"
+        assert "stable_id" in call_kwargs
+        assert isinstance(call_kwargs["stable_id"], str)
+        assert len(call_kwargs["stable_id"]) > 0
 
     def test_regenerate_dry_run(
         self, mock_repo, mock_chunk_store, mock_meta_gen, kb_dir

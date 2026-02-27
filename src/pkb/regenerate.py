@@ -10,7 +10,7 @@ from pkb.db.postgres import BundleRepository
 from pkb.generator.chunker import chunk_text, prepare_chunks_for_chromadb
 from pkb.generator.md_generator import conversation_to_markdown, write_md_file
 from pkb.generator.meta_gen import MetaGenerator
-from pkb.ingest import compute_question_hash
+from pkb.ingest import compute_question_hash, compute_stable_id
 from pkb.parser.directory import SUPPORTED_EXTENSIONS, parse_file
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ class Regenerator:
         # Parse input file (use first file)
         conv = parse_file(raw_files[0])
         question, question_hash = compute_question_hash(conv)
+        stable_id = compute_stable_id(conv)
 
         # Generate bundle meta (re-run LLM)
         response_summaries = self._build_response_summaries(conv)
@@ -106,6 +107,7 @@ class Regenerator:
                 response_count=self._count_responses(conv),
                 path=f"bundles/{bundle_id}",
                 question_hash=question_hash,
+                stable_id=stable_id,
                 domains=bundle_meta.domains,
                 topics=bundle_meta.topics,
                 pending_topics=bundle_meta.pending_topics,
