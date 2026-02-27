@@ -104,7 +104,7 @@ class BundleRepository:
                     "response_count": response_count,
                     "path": path,
                     "question_hash": question_hash,
-                    "stable_id": stable_id,
+                    "stable_id": stable_id or question_hash,
                     "source_path": source_path,
                 },
             )
@@ -774,7 +774,6 @@ class BundleRepository:
                         WHERE bt.bundle_id = b.id AND bt.is_pending = FALSE), ''
                    ) AS topics
             FROM bundles b
-            LEFT JOIN bundle_responses br ON br.bundle_id = b.id
             WHERE b.stable_id = %s
             LIMIT 1
         """
