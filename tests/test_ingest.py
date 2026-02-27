@@ -1678,7 +1678,7 @@ class TestStableIdUpdateBehavior:
         pipeline.ingest_file(sample_jsonl)
 
         # Old chunks should be deleted
-        mock_deps["chunk_store"].delete_by_bundle_id.assert_called_once_with(
+        mock_deps["chunk_store"].delete_by_bundle.assert_called_once_with(
             existing_bundle_dir["bundle_id"],
         )
         # New chunks should be upserted

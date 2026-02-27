@@ -343,7 +343,7 @@ class IngestPipeline:
             )
 
             # 6. ChromaDB: delete old chunks, then upsert new
-            self._chunk_store.delete_by_bundle_id(bundle_id)
+            self._chunk_store.delete_by_bundle(bundle_id)
 
             full_text = conversation_to_markdown(conv, bundle_id)
             chunks = chunk_text(full_text)
