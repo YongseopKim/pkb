@@ -762,6 +762,44 @@ class BundleRepository:
             for row in rows
         ]
 
+    def list_bundles_by_topic(
+        self,
+        topic: str,
+        kb: str | None = None,
+    ) -> list[dict]:
+        """List bundles belonging to a topic, optionally filtered by KB."""
+        with self._get_conn() as conn:
+            if kb:
+                rows = conn.execute(
+                    "SELECT b.id AS bundle_id, b.kb, b.question, b.summary, "
+                    "b.created_at "
+                    "FROM bundles b "
+                    "JOIN bundle_topics bt ON bt.bundle_id = b.id "
+                    "WHERE bt.topic = %s AND b.kb = %s "
+                    "ORDER BY b.created_at DESC",
+                    (topic, kb),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT b.id AS bundle_id, b.kb, b.question, b.summary, "
+                    "b.created_at "
+                    "FROM bundles b "
+                    "JOIN bundle_topics bt ON bt.bundle_id = b.id "
+                    "WHERE bt.topic = %s "
+                    "ORDER BY b.created_at DESC",
+                    (topic,),
+                ).fetchall()
+        return [
+            {
+                "bundle_id": row[0],
+                "kb": row[1],
+                "question": row[2],
+                "summary": row[3],
+                "created_at": row[4],
+            }
+            for row in rows
+        ]
+
     def find_by_source_path(self, source_path: str) -> str | None:
         """Find a bundle ID by its source file path.
 

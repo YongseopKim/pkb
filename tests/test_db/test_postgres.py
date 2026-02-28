@@ -1263,3 +1263,42 @@ class TestGetResponsesForBundle:
         assert result[0]["key_claims"] == []
         assert result[0]["stance"] is None
         assert result[0]["source_path"] is None
+
+
+class TestListBundlesByTopic:
+    """Tests for list_bundles_by_topic()."""
+
+    def test_returns_empty_for_missing_topic(self, repo, mock_conn):
+        """존재하지 않는 topic은 빈 리스트 반환."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        result = repo.list_bundles_by_topic("nonexistent-topic")
+        assert result == []
+
+    def test_returns_list_of_dicts(self, repo, mock_conn):
+        """1개 row 반환 시 올바른 키를 가진 dict 리스트."""
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                "20260228-python-basics-a1b2",
+                "personal",
+                "Python 기초 질문",
+                "Python 기초 요약",
+                datetime(2026, 2, 28, tzinfo=timezone.utc),
+            ),
+        ]
+        result = repo.list_bundles_by_topic("python")
+        assert len(result) == 1
+        assert result[0]["bundle_id"] == "20260228-python-basics-a1b2"
+        assert result[0]["kb"] == "personal"
+        assert result[0]["question"] == "Python 기초 질문"
+        assert result[0]["summary"] == "Python 기초 요약"
+        assert result[0]["created_at"] == datetime(2026, 2, 28, tzinfo=timezone.utc)
+
+    def test_with_kb_filter(self, repo, mock_conn):
+        """kb 파라미터가 SQL에 전달되는지 검증."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.list_bundles_by_topic("python", kb="personal")
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        params = call_args[0][1]
+        assert "b.kb = %s" in sql
+        assert params == ("python", "personal")
