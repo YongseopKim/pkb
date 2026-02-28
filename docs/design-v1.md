@@ -148,12 +148,12 @@ llm:                               # Multi-provider config (takes priority over 
     escalation: true
 
 embedding:
-  chunk_size: 512
-  chunk_overlap: 50
-  mode: server              # "server" (ChromaDB 기본) | "tei" (클라이언트측)
-  model_name: ""            # TEI 모드시: "BAAI/bge-m3"
-  dimensions: 0             # TEI 모드시: 1024
-  tei_url: "http://localhost:8080"
+  chunk_size: 1500
+  chunk_overlap: 200
+  mode: tei                 # "server" (ChromaDB 기본) | "tei" (클라이언트측 via TEI)
+  model_name: BAAI/bge-m3   # 모델 식별자 (collection metadata에 저장)
+  dimensions: 1024           # 벡터 차원 (0=server auto)
+  tei_url: "http://localhost:8090"  # TEI 서버 URL
   tei_batch_size: 32
   tei_timeout: 30.0
 

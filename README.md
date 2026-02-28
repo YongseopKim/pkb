@@ -23,7 +23,7 @@ PKB는 **도구**(이 리포)와 **데이터**(별도 KB 리포)를 분리합니
 pkb/                            ← 도구 (이 리포지토리)
 ├── src/pkb/                    ← Python 패키지
 ├── prompts/                    ← LLM 프롬프트 템플릿
-├── tests/                      ← 1279개 pytest 테스트
+├── tests/                      ← 1279개 테스트 (1223 mock + 56 integration)
 └── pyproject.toml
 
 ~/.pkb/                         ← 글로벌 설정 (자동 생성)
@@ -200,7 +200,7 @@ git config core.hooksPath scripts/hooks
 
 ```bash
 # 테스트
-pytest                       # 1279개 테스트 (1218 mock + 61 integration)
+pytest                       # 1279개 테스트 (1223 mock + 56 integration)
 
 # 통합 테스트 (Docker 필요)
 docker compose -f docker/docker-compose.test.yml up -d
