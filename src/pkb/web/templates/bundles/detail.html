@@ -8,7 +8,13 @@
     <p><strong>Domains:</strong> {{ bundle.domains }}</p>
     <p><strong>Topics:</strong> {{ bundle.topics }}</p>
     <p><strong>Created:</strong> {{ bundle.created_at }}</p>
+    {% if responses %}
+    <p><strong>Platforms:</strong> {{ responses|map(attribute='platform')|join(', ') }}</p>
+    {% endif %}
 </div>
+{% if responses|length >= 2 %}
+<a href="/compare/{{ bundle.bundle_id }}" class="btn-sm" style="margin-bottom:1rem;display:inline-block">Compare LLM Responses</a>
+{% endif %}
 <form method="post" action="/bundles/{{ bundle.bundle_id }}/delete"
       onsubmit="return confirm('Delete this bundle?');">
     <button type="submit" class="btn-danger">Delete</button>

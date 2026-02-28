@@ -1,16 +1,40 @@
 {% extends "base.html" %}
 {% block title %}PKB — Chat{% endblock %}
+{% block head %}
+<style>
+.chat-layout { display:grid; grid-template-columns:1fr 300px; gap:1rem; height:calc(100vh - 120px); }
+.chat-main { display:flex; flex-direction:column; }
+#chat-messages { flex:1; background:#fff; padding:1rem; border-radius:6px; overflow-y:auto; min-height:0; }
+#chat-form { display:flex; gap:0.5rem; margin-top:0.5rem; }
+#chat-form input { flex:1; padding:0.5rem; border:1px solid #ccc; border-radius:4px; }
+.context-sidebar { background:#fff; padding:1rem; border-radius:6px; overflow-y:auto; }
+.context-sidebar h3 { font-size:1rem; margin-bottom:0.8rem; color:#2c3e50; }
+.context-item { padding:0.5rem 0; border-bottom:1px solid #f0f0f0; }
+.context-item a { font-size:0.85rem; }
+.context-item .score { color:#7f8c8d; font-size:0.8rem; margin-left:0.5rem; }
+.context-item .context-question { font-size:0.85rem; color:#555; margin:0.2rem 0 0; }
+@media (max-width: 768px) { .chat-layout { grid-template-columns:1fr; } .context-sidebar { max-height:200px; } }
+</style>
+{% endblock %}
 {% block content %}
 <h1>RAG Chat</h1>
-<div id="chat-messages">
-    {% for msg in messages %}
-    <div class="chat-msg {{ msg.role }}">
-        <strong>{{ msg.role }}:</strong> {{ msg.content }}
+<div class="chat-layout">
+    <div class="chat-main">
+        <div id="chat-messages">
+            {% for msg in messages %}
+            <div class="chat-msg {{ msg.role }}">
+                <strong>{{ msg.role }}:</strong> {{ msg.content }}
+            </div>
+            {% endfor %}
+        </div>
+        <form id="chat-form" hx-post="/chat/send" hx-target="#chat-messages" hx-swap="beforeend">
+            <input type="text" name="message" placeholder="Ask a question..." autofocus>
+            <button type="submit">Send</button>
+        </form>
     </div>
-    {% endfor %}
+    <div class="context-sidebar" id="context-panel">
+        <h3>Context</h3>
+        <p style="color:#7f8c8d;font-size:0.85rem">Related bundles will appear here after your first question.</p>
+    </div>
 </div>
-<form id="chat-form" hx-post="/chat/send" hx-target="#chat-messages" hx-swap="beforeend">
-    <input type="text" name="message" placeholder="Ask a question..." autofocus>
-    <button type="submit">Send</button>
-</form>
 {% endblock %}

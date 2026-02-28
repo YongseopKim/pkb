@@ -24,6 +24,17 @@ def relations_list(request: Request, relation_type: str = "all"):
     })
 
 
+@router.get("/graph")
+def relations_graph_page(request: Request):
+    """Render interactive knowledge graph visualization."""
+    templates = request.app.state.templates
+    pkb: AppState = request.app.state.pkb
+    count = pkb.repo.count_relations()
+    return templates.TemplateResponse(request, "relations/graph.html", {
+        "total": count,
+    })
+
+
 @router.get("/api/graph")
 def relations_graph_json(request: Request, kb: str | None = None):
     """Return relation graph as JSON for D3.js visualization."""
@@ -31,11 +42,11 @@ def relations_graph_json(request: Request, kb: str | None = None):
 
     relations = pkb.repo.list_all_relations(kb=kb)
 
-    nodes = set()
+    node_ids = set()
     edges = []
     for r in relations:
-        nodes.add(r["source_bundle_id"])
-        nodes.add(r["target_bundle_id"])
+        node_ids.add(r["source_bundle_id"])
+        node_ids.add(r["target_bundle_id"])
         edges.append({
             "source": r["source_bundle_id"],
             "target": r["target_bundle_id"],
@@ -43,10 +54,20 @@ def relations_graph_json(request: Request, kb: str | None = None):
             "score": r["score"],
         })
 
-    return {
-        "nodes": [{"id": n} for n in sorted(nodes)],
-        "edges": edges,
-    }
+    nodes = []
+    for nid in sorted(node_ids):
+        bundle = pkb.repo.get_bundle_by_id(nid)
+        if bundle:
+            nodes.append({
+                "id": nid,
+                "question": bundle.get("question", ""),
+                "domains": bundle.get("domains", ""),
+                "topics": bundle.get("topics", ""),
+            })
+        else:
+            nodes.append({"id": nid, "question": "", "domains": "", "topics": ""})
+
+    return {"nodes": nodes, "edges": edges}
 
 
 @router.get("/{bundle_id}")

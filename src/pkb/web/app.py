@@ -41,6 +41,7 @@ def create_app(state: AppState) -> FastAPI:
     from pkb.web.routes.analytics import router as analytics_router
     from pkb.web.routes.bundles import router as bundles_router
     from pkb.web.routes.chat import router as chat_router
+    from pkb.web.routes.compare import router as compare_router
     from pkb.web.routes.digest import router as digest_router
     from pkb.web.routes.duplicates import router as duplicates_router
     from pkb.web.routes.relations import router as relations_router
@@ -57,15 +58,28 @@ def create_app(state: AppState) -> FastAPI:
     app.include_router(analytics_router)
     app.include_router(settings_router)
     app.include_router(chat_router)
+    app.include_router(compare_router)
 
     @app.get("/")
     def dashboard(request: Request):
+        from datetime import datetime, timedelta, timezone
+
+        from pkb.analytics import AnalyticsEngine
+
         pkb: AppState = request.app.state.pkb
+        engine = AnalyticsEngine(repo=pkb.repo)
+
         bundle_ids = pkb.repo.list_all_bundle_ids()
-        recent = bundle_ids[-5:] if bundle_ids else []
+        since = datetime.now(timezone.utc) - timedelta(days=7)
+        recent = pkb.repo.list_bundles_since(since)
+        overview = engine.overview()
+        gaps = engine.knowledge_gaps(threshold=3)
+
         return templates.TemplateResponse(request, "dashboard.html", {
             "total_bundles": len(bundle_ids),
-            "recent_bundles": recent,
+            "recent_bundles": recent[:10],
+            "overview": overview,
+            "gaps": gaps[:5],
         })
 
     return app

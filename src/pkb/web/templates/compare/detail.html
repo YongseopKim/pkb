@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}PKB — Compare {{ bundle.bundle_id }}{% endblock %}
+{% block head %}
+<style>
+.compare-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:1rem; margin-top:1rem; }
+.platform-card { background:#fff; padding:1rem; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.1); }
+.platform-card h3 { margin-bottom:0.5rem; }
+.platform-card .model { color:#7f8c8d; font-size:0.85rem; }
+.claim { padding:0.3rem 0.5rem; margin:0.2rem 0; border-radius:3px; font-size:0.9rem; }
+.claim.consensus { background:#d5f5e3; }
+.claim.unique { background:#fdebd0; }
+.stance-badge { display:inline-block; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.8rem; color:#fff; }
+.stance-positive { background:#27ae60; }
+.stance-negative { background:#e74c3c; }
+.stance-neutral { background:#95a5a6; }
+</style>
+{% endblock %}
+{% block content %}
+<h1>Compare: {{ bundle.bundle_id }}</h1>
+<p><strong>Question:</strong> {{ bundle.question or '(none)' }}</p>
+<p><strong>Summary:</strong> {{ bundle.summary or '(none)' }}</p>
+
+{% if responses|length < 2 %}
+<p style="color:#7f8c8d;margin-top:1rem">This bundle has only {{ responses|length }} platform response(s). Comparison requires at least 2.</p>
+{% endif %}
+
+<div id="consensus-bar" style="margin-top:1rem;display:none">
+    <h3>Consensus Claims</h3>
+    <div id="consensus-list"></div>
+</div>
+
+<div class="compare-grid">
+{% for r in responses %}
+<div class="platform-card" data-platform="{{ r.platform }}">
+    <h3>{{ r.platform }}</h3>
+    <p class="model">{{ r.model or 'N/A' }} | {{ r.turn_count }} turns</p>
+    {% if r.stance %}
+    <span class="stance-badge stance-{{ r.stance }}">{{ r.stance }}</span>
+    {% endif %}
+    <h4 style="margin-top:0.8rem">Key Claims</h4>
+    <div class="claims-list">
+    {% for c in (r.key_claims or []) %}
+    <div class="claim" data-claim="{{ c }}">{{ c }}</div>
+    {% endfor %}
+    {% if not r.key_claims %}
+    <p style="color:#7f8c8d;font-size:0.9rem">(no claims extracted)</p>
+    {% endif %}
+    </div>
+</div>
+{% endfor %}
+</div>
+
+<p style="margin-top:1rem"><a href="/bundles/{{ bundle.bundle_id }}">&laquo; Back to bundle</a></p>
+
+<script>
+async function highlightClaims() {
+    const resp = await fetch('/compare/api/{{ bundle.bundle_id }}');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const consensus = new Set(data.consensus || []);
+
+    document.querySelectorAll('.claim').forEach(function(el) {
+        var claim = el.getAttribute('data-claim');
+        if (consensus.has(claim)) {
+            el.classList.add('consensus');
+        } else {
+            el.classList.add('unique');
+        }
+    });
+
+    if (consensus.size > 0) {
+        var bar = document.getElementById('consensus-bar');
+        bar.style.display = 'block';
+        var list = document.getElementById('consensus-list');
+        consensus.forEach(function(c) {
+            var div = document.createElement('div');
+            div.className = 'claim consensus';
+            div.textContent = c;
+            list.appendChild(div);
+        });
+    }
+}
+highlightClaims();
+</script>
+{% endblock %}

@@ -177,3 +177,126 @@ class TestChatRoute:
         resp = client.get("/chat")
         assert resp.status_code == 200
         assert "Chat" in resp.text
+
+
+class TestDashboardEnhanced:
+    def test_dashboard_has_recent_activity(self, client, mock_state):
+        """Dashboard should show recent bundles with metadata."""
+        mock_state.repo.list_all_bundle_ids.return_value = ["b1", "b2"]
+        mock_state.repo.list_bundles_since.return_value = [
+            {"bundle_id": "b1", "question": "Q1", "kb": "personal", "created_at": "2026-02-28"},
+        ]
+        mock_state.repo.count_bundles_by_domain.return_value = [
+            {"domain": "dev", "count": 5},
+        ]
+        mock_state.repo.count_bundles_by_topic.return_value = [
+            {"topic": "python", "count": 2},
+        ]
+        mock_state.repo.count_relations.return_value = 3
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "Recent Activity" in resp.text or "recent" in resp.text.lower()
+
+    def test_dashboard_has_knowledge_gaps(self, client, mock_state):
+        """Dashboard should show knowledge gap cards."""
+        mock_state.repo.list_all_bundle_ids.return_value = ["b1"]
+        mock_state.repo.list_bundles_since.return_value = []
+        mock_state.repo.count_bundles_by_domain.return_value = [
+            {"domain": "dev", "count": 5},
+        ]
+        mock_state.repo.count_bundles_by_topic.return_value = [
+            {"topic": "k8s", "count": 1},
+        ]
+        mock_state.repo.count_relations.return_value = 0
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "Knowledge Gaps" in resp.text or "gaps" in resp.text.lower()
+
+    def test_dashboard_has_domain_chart(self, client, mock_state):
+        """Dashboard should include domain distribution chart."""
+        mock_state.repo.list_all_bundle_ids.return_value = ["b1"]
+        mock_state.repo.list_bundles_since.return_value = []
+        mock_state.repo.count_bundles_by_domain.return_value = []
+        mock_state.repo.count_bundles_by_topic.return_value = []
+        mock_state.repo.count_relations.return_value = 0
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "domainMiniChart" in resp.text or "chart.js" in resp.text.lower()
+
+
+class TestBundleDetailCompareLink:
+    def test_bundle_detail_has_compare_link(self, client, mock_state):
+        """Bundle detail should have Compare button when multi-platform."""
+        mock_state.repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-test-abc1",
+            "question": "Test question",
+            "summary": "Test summary",
+            "kb": "personal",
+            "domains": "dev",
+            "topics": "python",
+            "created_at": None,
+        }
+        mock_state.repo.get_responses_for_bundle.return_value = [
+            {"platform": "claude", "model": "m1", "turn_count": 3,
+             "key_claims": [], "stance": "", "source_path": None},
+            {"platform": "chatgpt", "model": "m2", "turn_count": 2,
+             "key_claims": [], "stance": "", "source_path": None},
+        ]
+        resp = client.get("/bundles/20260101-test-abc1")
+        assert resp.status_code == 200
+        assert "/compare/20260101-test-abc1" in resp.text
+
+    def test_bundle_detail_no_compare_single_platform(self, client, mock_state):
+        """Bundle detail should NOT have Compare button for single platform."""
+        mock_state.repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-test-abc1",
+            "question": "Test question",
+            "summary": "Test summary",
+            "kb": "personal",
+            "domains": "dev",
+            "topics": "python",
+            "created_at": None,
+        }
+        mock_state.repo.get_responses_for_bundle.return_value = [
+            {"platform": "claude", "model": "m1", "turn_count": 3,
+             "key_claims": [], "stance": "", "source_path": None},
+        ]
+        resp = client.get("/bundles/20260101-test-abc1")
+        assert resp.status_code == 200
+        assert "/compare/20260101-test-abc1" not in resp.text
+
+
+class TestChatUIEnhanced:
+    def test_chat_page_has_context_panel(self, client):
+        """Chat page should have context sidebar panel."""
+        resp = client.get("/chat")
+        assert resp.status_code == 200
+        assert "context-panel" in resp.text
+
+    def test_chat_send_returns_sources(self, client, mock_state):
+        """Chat send should return source references in response."""
+        from unittest.mock import MagicMock as _MagicMock
+
+        from pkb.chat.models import ChatResponse
+
+        mock_engine = _MagicMock()
+        mock_engine.ask.return_value = ChatResponse(
+            content="GIL is a mutex.",
+            sources=[
+                {"bundle_id": "20260101-python-abc1", "question": "Python GIL?", "score": 0.9},
+            ],
+        )
+        mock_state.chat_engine = mock_engine
+        resp = client.post("/chat/send", data={"message": "What is GIL?"})
+        assert resp.status_code == 200
+        assert "20260101-python-abc1" in resp.text
+
+
+class TestStyleConsistency:
+    def test_static_css_loads(self, client, mock_state):
+        """Static CSS should be accessible and contain new component styles."""
+        resp = client.get("/static/style.css")
+        assert resp.status_code == 200
+        assert "dashboard-grid" in resp.text
+        assert "compare-grid" in resp.text
+        assert "chat-layout" in resp.text

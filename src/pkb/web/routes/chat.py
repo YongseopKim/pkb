@@ -45,7 +45,28 @@ def chat_send(request: Request, message: str = Form(...)):
             f'<div class="chat-msg assistant">'
             f"<strong>assistant:</strong> {response.content}</div>"
         )
-        return HTMLResponse(user_html + assistant_html)
+
+        # Build sources HTML for context panel (htmx OOB swap)
+        sources_html = ""
+        if response.sources:
+            sources_parts = []
+            for s in response.sources:
+                bid = s.get("bundle_id", "")
+                q = s.get("question", bid)
+                score = s.get("score", 0)
+                sources_parts.append(
+                    f'<div class="context-item">'
+                    f'<a href="/bundles/{bid}">{bid}</a>'
+                    f'<span class="score">{score:.2f}</span>'
+                    f'<p class="context-question">{q}</p></div>'
+                )
+            items = "".join(sources_parts)
+            sources_html = (
+                f'<div id="context-sources" hx-swap-oob="innerHTML:#context-panel">'
+                f'<h3>Related Bundles</h3>{items}</div>'
+            )
+
+        return HTMLResponse(user_html + assistant_html + sources_html)
     except Exception as e:
         return HTMLResponse(
             f'<div class="chat-msg user"><strong>user:</strong> {message}</div>'
