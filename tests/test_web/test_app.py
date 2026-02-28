@@ -264,3 +264,29 @@ class TestBundleDetailCompareLink:
         resp = client.get("/bundles/20260101-test-abc1")
         assert resp.status_code == 200
         assert "/compare/20260101-test-abc1" not in resp.text
+
+
+class TestChatUIEnhanced:
+    def test_chat_page_has_context_panel(self, client):
+        """Chat page should have context sidebar panel."""
+        resp = client.get("/chat")
+        assert resp.status_code == 200
+        assert "context-panel" in resp.text
+
+    def test_chat_send_returns_sources(self, client, mock_state):
+        """Chat send should return source references in response."""
+        from unittest.mock import MagicMock as _MagicMock
+
+        from pkb.chat.models import ChatResponse
+
+        mock_engine = _MagicMock()
+        mock_engine.ask.return_value = ChatResponse(
+            content="GIL is a mutex.",
+            sources=[
+                {"bundle_id": "20260101-python-abc1", "question": "Python GIL?", "score": 0.9},
+            ],
+        )
+        mock_state.chat_engine = mock_engine
+        resp = client.post("/chat/send", data={"message": "What is GIL?"})
+        assert resp.status_code == 200
+        assert "20260101-python-abc1" in resp.text
