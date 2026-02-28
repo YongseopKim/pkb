@@ -1223,3 +1223,43 @@ class TestSearchClaims:
         call_args = mock_conn.execute.call_args
         params = call_args[0][1]
         assert params.get("pattern") == "%Python%"
+
+
+class TestGetResponsesForBundle:
+    """get_responses_for_bundle(): bundle_id에 해당하는 platform responses 조회."""
+
+    def test_returns_empty_for_nonexistent(self, repo, mock_conn):
+        """존재하지 않는 bundle_id는 빈 리스트 반환."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        result = repo.get_responses_for_bundle("nonexistent-bundle-id")
+        assert result == []
+
+    def test_returns_list_of_dicts(self, repo, mock_conn):
+        """2개 row 반환 시 2개 dict 리스트, 올바른 키 포함."""
+        mock_conn.execute.return_value.fetchall.return_value = [
+            ("claude", "sonnet-4", 5, ["LLM은 유용하다"], "긍정적", "/path/to/claude.jsonl"),
+            ("chatgpt", "gpt-4o", 3, ["AI는 발전 중"], "중립", "/path/to/chatgpt.jsonl"),
+        ]
+        result = repo.get_responses_for_bundle("20260228-test-a1b2")
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0]["platform"] == "claude"
+        assert result[0]["model"] == "sonnet-4"
+        assert result[0]["turn_count"] == 5
+        assert result[0]["key_claims"] == ["LLM은 유용하다"]
+        assert result[0]["stance"] == "긍정적"
+        assert result[0]["source_path"] == "/path/to/claude.jsonl"
+        assert result[1]["platform"] == "chatgpt"
+        assert result[1]["model"] == "gpt-4o"
+        assert result[1]["turn_count"] == 3
+
+    def test_key_claims_defaults_to_empty_list(self, repo, mock_conn):
+        """key_claims가 None이면 빈 리스트로 반환."""
+        mock_conn.execute.return_value.fetchall.return_value = [
+            ("claude", "sonnet-4", 5, None, None, None),
+        ]
+        result = repo.get_responses_for_bundle("20260228-test-a1b2")
+        assert len(result) == 1
+        assert result[0]["key_claims"] == []
+        assert result[0]["stance"] is None
+        assert result[0]["source_path"] is None

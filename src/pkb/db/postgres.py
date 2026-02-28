@@ -296,6 +296,32 @@ class BundleRepository:
             "has_synthesis": row[9],
         }
 
+    def get_responses_for_bundle(self, bundle_id: str) -> list[dict]:
+        """Get all platform responses for a given bundle_id.
+
+        Returns list of dicts with platform, model, turn_count,
+        key_claims, stance, source_path. Ordered by platform.
+        """
+        sql = """
+            SELECT platform, model, turn_count, key_claims, stance, source_path
+            FROM bundle_responses
+            WHERE bundle_id = %s
+            ORDER BY platform
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute(sql, (bundle_id,)).fetchall()
+        return [
+            {
+                "platform": row[0],
+                "model": row[1],
+                "turn_count": row[2],
+                "key_claims": row[3] if row[3] is not None else [],
+                "stance": row[4],
+                "source_path": row[5],
+            }
+            for row in rows
+        ]
+
     def list_all_bundle_ids(self, kb: str | None = None) -> list[str]:
         """List all bundle IDs, optionally filtered by KB."""
         with self._get_conn() as conn:
