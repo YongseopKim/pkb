@@ -1,6 +1,7 @@
 """Tests for PKB MCP server tools."""
 
 import json
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -163,3 +164,69 @@ class TestHandleIngest:
         result = _handle_ingest(mock_pipeline, {"file_path": str(test_file)})
         parsed = json.loads(result)
         assert parsed["status"] == "skip_parse_error"
+
+
+class TestHandleBrowse:
+    def test_browse_by_domain(self):
+        from pkb.mcp_server import _handle_browse
+
+        mock_repo = MagicMock()
+        mock_repo.list_bundles_by_domain.return_value = [
+            {
+                "bundle_id": "b1",
+                "kb": "p",
+                "question": "Q?",
+                "summary": "S",
+                "created_at": datetime(2026, 2, 28),
+            },
+        ]
+        result = _handle_browse(mock_repo, {"domain": "dev"})
+        parsed = json.loads(result)
+        assert len(parsed) == 1
+        assert parsed[0]["bundle_id"] == "b1"
+        mock_repo.list_bundles_by_domain.assert_called_once_with("dev", kb=None)
+
+    def test_browse_by_topic(self):
+        from pkb.mcp_server import _handle_browse
+
+        mock_repo = MagicMock()
+        mock_repo.list_bundles_by_topic.return_value = [
+            {
+                "bundle_id": "b1",
+                "kb": "p",
+                "question": "Q?",
+                "summary": "S",
+                "created_at": datetime(2026, 2, 28),
+            },
+        ]
+        result = _handle_browse(mock_repo, {"topic": "python"})
+        parsed = json.loads(result)
+        assert len(parsed) == 1
+        mock_repo.list_bundles_by_topic.assert_called_once_with("python", kb=None)
+
+    def test_browse_recent_days(self):
+        from pkb.mcp_server import _handle_browse
+
+        mock_repo = MagicMock()
+        mock_repo.list_bundles_since.return_value = []
+        result = _handle_browse(mock_repo, {"days": 7})
+        parsed = json.loads(result)
+        assert parsed == []
+
+    def test_browse_with_limit(self):
+        from pkb.mcp_server import _handle_browse
+
+        mock_repo = MagicMock()
+        mock_repo.list_bundles_by_domain.return_value = [
+            {"bundle_id": f"b{i}"} for i in range(30)
+        ]
+        result = _handle_browse(mock_repo, {"domain": "dev", "limit": 5})
+        parsed = json.loads(result)
+        assert len(parsed) == 5
+
+    def test_browse_requires_filter(self):
+        from pkb.mcp_server import _handle_browse
+
+        result = _handle_browse(MagicMock(), {})
+        parsed = json.loads(result)
+        assert "error" in parsed

@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 from pkb.digest import DigestEngine
 
-TOOL_NAMES = {"pkb_search", "pkb_digest", "pkb_related", "pkb_stats", "pkb_ingest"}
+TOOL_NAMES = {"pkb_search", "pkb_digest", "pkb_related", "pkb_stats", "pkb_ingest", "pkb_browse"}
 
 # Lazy-init state for DB connections (shared across tool calls)
 _state: dict[str, Any] = {}
@@ -136,6 +136,21 @@ def create_mcp_server() -> FastMCP:
             return json.dumps({"error": "No KB configured"})
         return _handle_ingest(pipeline, {"file_path": file_path})
 
+    @mcp.tool()
+    def pkb_browse(
+        domain: str | None = None,
+        topic: str | None = None,
+        days: int | None = None,
+        kb: str | None = None,
+        limit: int = 20,
+    ) -> str:
+        """Browse bundles by domain, topic, or recent days."""
+        state = _get_state()
+        return _handle_browse(
+            state["repo"],
+            {"domain": domain, "topic": topic, "days": days, "kb": kb, "limit": limit},
+        )
+
     return mcp
 
 
@@ -224,6 +239,30 @@ def _handle_ingest(pipeline: Any, args: dict) -> str:
     if result is None:
         return json.dumps({"error": "Ingest returned None"})
     return json.dumps(result, ensure_ascii=False, default=str, indent=2)
+
+
+def _handle_browse(repo: Any, args: dict) -> str:
+    """Browse bundles by domain, topic, or recent days."""
+    from datetime import datetime, timedelta, timezone
+
+    domain = args.get("domain")
+    topic = args.get("topic")
+    days = args.get("days")
+    kb = args.get("kb")
+    limit = args.get("limit", 20)
+
+    if domain:
+        bundles = repo.list_bundles_by_domain(domain, kb=kb)
+    elif topic:
+        bundles = repo.list_bundles_by_topic(topic, kb=kb)
+    elif days:
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        bundles = repo.list_bundles_since(since, kb=kb)
+    else:
+        return json.dumps({"error": "Specify domain, topic, or days"})
+
+    bundles = bundles[:limit]
+    return json.dumps(bundles, ensure_ascii=False, default=str, indent=2)
 
 
 def main() -> None:
