@@ -7,6 +7,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 import psycopg
+from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
 from pkb.db.schema import DROP_TABLES_SQL
@@ -76,6 +77,9 @@ class BundleRepository:
         pending_topics: list[str] | None = None,
         source_path: str | None = None,
         stable_id: str | None = None,
+        consensus: str | None = None,
+        divergence: str | None = None,
+        has_synthesis: bool = False,
     ) -> None:
         """Insert or update a bundle and its related data."""
         with self._get_conn() as conn:
@@ -83,17 +87,22 @@ class BundleRepository:
             conn.execute(
                 """
                 INSERT INTO bundles (id, kb, question, summary, created_at, response_count, path,
-                                     question_hash, stable_id, source_path, meta_version)
+                                     question_hash, stable_id, source_path, meta_version,
+                                     consensus, divergence, has_synthesis)
                 VALUES (%(id)s, %(kb)s, %(question)s, %(summary)s, %(created_at)s,
                         %(response_count)s, %(path)s, %(question_hash)s, %(stable_id)s,
-                        %(source_path)s, 1)
+                        %(source_path)s, 1,
+                        %(consensus)s, %(divergence)s, %(has_synthesis)s)
                 ON CONFLICT (id) DO UPDATE SET
                     summary = EXCLUDED.summary,
                     updated_at = NOW(),
                     response_count = EXCLUDED.response_count,
                     question_hash = EXCLUDED.question_hash,
                     stable_id = COALESCE(EXCLUDED.stable_id, bundles.stable_id),
-                    source_path = EXCLUDED.source_path
+                    source_path = EXCLUDED.source_path,
+                    consensus = EXCLUDED.consensus,
+                    divergence = EXCLUDED.divergence,
+                    has_synthesis = EXCLUDED.has_synthesis
                 """,
                 {
                     "id": bundle_id,
@@ -106,6 +115,9 @@ class BundleRepository:
                     "question_hash": question_hash,
                     "stable_id": stable_id or question_hash,
                     "source_path": source_path,
+                    "consensus": consensus,
+                    "divergence": divergence,
+                    "has_synthesis": has_synthesis,
                 },
             )
 
@@ -145,10 +157,13 @@ class BundleRepository:
             for resp in responses:
                 conn.execute(
                     """INSERT INTO bundle_responses
-                       (bundle_id, platform, model, turn_count, source_path)
-                       VALUES (%s, %s, %s, %s, %s)""",
+                       (bundle_id, platform, model, turn_count, source_path,
+                        key_claims, stance)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                     (bundle_id, resp["platform"], resp.get("model"),
-                     resp.get("turn_count"), resp.get("source_path")),
+                     resp.get("turn_count"), resp.get("source_path"),
+                     Json(resp.get("key_claims") or []),
+                     resp.get("stance")),
                 )
 
     def search_fts(
@@ -242,7 +257,8 @@ class BundleRepository:
                    COALESCE(
                        (SELECT string_agg(bt.topic, ',') FROM bundle_topics bt
                         WHERE bt.bundle_id = b.id AND bt.is_pending = FALSE), ''
-                   ) AS topics
+                   ) AS topics,
+                   b.consensus, b.divergence, b.has_synthesis
             FROM bundles b
             WHERE b.id = %s
         """
@@ -258,6 +274,9 @@ class BundleRepository:
             "created_at": row[4],
             "domains": row[5],
             "topics": row[6],
+            "consensus": row[7],
+            "divergence": row[8],
+            "has_synthesis": row[9],
         }
 
     def list_all_bundle_ids(self, kb: str | None = None) -> list[str]:
@@ -333,6 +352,9 @@ class BundleRepository:
         question: str | None = None,
         question_hash: str | None = None,
         source_path: str | None = None,
+        consensus: str | None = None,
+        divergence: str | None = None,
+        has_synthesis: bool = False,
     ) -> None:
         """Update bundle metadata (summary, domains, topics) from frontmatter edits.
 
@@ -347,6 +369,9 @@ class BundleRepository:
                     question = COALESCE(%(question)s, question),
                     question_hash = COALESCE(%(question_hash)s, question_hash),
                     source_path = COALESCE(%(source_path)s, source_path),
+                    consensus = COALESCE(%(consensus)s, consensus),
+                    divergence = COALESCE(%(divergence)s, divergence),
+                    has_synthesis = %(has_synthesis)s,
                     updated_at = NOW()
                 WHERE id = %(id)s
                 """,
@@ -356,6 +381,9 @@ class BundleRepository:
                     "question": question,
                     "question_hash": question_hash,
                     "source_path": source_path,
+                    "consensus": consensus,
+                    "divergence": divergence,
+                    "has_synthesis": has_synthesis,
                 },
             )
 
@@ -819,6 +847,8 @@ class BundleRepository:
         model: str | None = None,
         turn_count: int = 0,
         source_path: str | None = None,
+        key_claims: list[str] | None = None,
+        stance: str | None = None,
     ) -> None:
         """Add a new platform response to an existing bundle (merge).
 
@@ -827,13 +857,17 @@ class BundleRepository:
         with self._get_conn() as conn:
             conn.execute(
                 """INSERT INTO bundle_responses
-                       (bundle_id, platform, model, turn_count, source_path)
-                   VALUES (%s, %s, %s, %s, %s)
+                       (bundle_id, platform, model, turn_count, source_path,
+                        key_claims, stance)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (bundle_id, platform) DO UPDATE SET
                        model = EXCLUDED.model,
                        turn_count = EXCLUDED.turn_count,
-                       source_path = EXCLUDED.source_path""",
-                (bundle_id, platform, model, turn_count, source_path),
+                       source_path = EXCLUDED.source_path,
+                       key_claims = EXCLUDED.key_claims,
+                       stance = EXCLUDED.stance""",
+                (bundle_id, platform, model, turn_count, source_path,
+                 Json(key_claims or []), stance),
             )
             conn.execute(
                 """UPDATE bundles SET
@@ -976,6 +1010,54 @@ class BundleRepository:
                 "question": row[2],
                 "summary": row[3],
                 "created_at": row[4],
+            }
+            for row in rows
+        ]
+
+    # ─── Claims search ──────────────────────────────────────
+
+    def search_claims(
+        self,
+        query: str,
+        kb: str | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Search key_claims across all responses using text containment."""
+        conditions = [
+            "EXISTS ("
+            "SELECT 1 FROM jsonb_array_elements_text(br.key_claims) AS claim "
+            "WHERE claim ILIKE %(pattern)s"
+            ")",
+        ]
+        params: dict = {
+            "pattern": f"%{query}%",
+            "limit": limit,
+        }
+        if kb:
+            conditions.append("b.kb = %(kb)s")
+            params["kb"] = kb
+
+        where_clause = " AND ".join(conditions)
+        sql = f"""
+            SELECT DISTINCT b.id, b.kb, b.question, b.summary, b.created_at,
+                   br.platform, br.key_claims, br.stance
+            FROM bundle_responses br
+            JOIN bundles b ON b.id = br.bundle_id
+            WHERE {where_clause}
+            LIMIT %(limit)s
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            {
+                "bundle_id": row[0],
+                "kb": row[1],
+                "question": row[2],
+                "summary": row[3],
+                "created_at": row[4],
+                "platform": row[5],
+                "key_claims": row[6],
+                "stance": row[7],
             }
             for row in rows
         ]

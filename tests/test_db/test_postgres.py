@@ -132,6 +132,7 @@ class TestGetBundleById:
             "20260221-bitcoin-a3f2", "personal", "Bitcoin halving이란?",
             "비트코인 반감기 분석", datetime(2026, 2, 21, tzinfo=timezone.utc),
             "investing", "bitcoin,crypto",
+            None, None, False,
         )
         result = repo.get_bundle_by_id("20260221-bitcoin-a3f2")
         assert result is not None
@@ -718,3 +719,464 @@ class TestRenameDomain:
         mock_conn.execute.return_value.rowcount = 0
         result = repo.rename_domain("nonexistent", "dev")
         assert result == 0
+
+
+# ─── Phase 8: Metadata columns ────────────────────────────────
+
+
+class TestUpsertBundleWithMetadata:
+    """upsert_bundle()에 consensus, divergence, has_synthesis 파라미터 추가."""
+
+    def _base_kwargs(self):
+        return dict(
+            bundle_id="20260228-multi-llm-a1b2",
+            kb="personal",
+            question="LLM 비교 질문",
+            summary="3개 LLM 응답 비교",
+            created_at=datetime.now(timezone.utc),
+            response_count=3,
+            path="bundles/20260228-multi-llm-a1b2",
+            question_hash="meta123",
+            domains=["dev"],
+            topics=["llm"],
+            responses=[{"platform": "claude", "model": "sonnet", "turn_count": 5}],
+        )
+
+    def test_upsert_accepts_consensus_parameter(self, repo, mock_conn):
+        """consensus 파라미터를 받을 수 있어야 함."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            consensus="모든 LLM이 Python을 추천함",
+        )
+        assert mock_conn.execute.call_count >= 1
+
+    def test_upsert_accepts_divergence_parameter(self, repo, mock_conn):
+        """divergence 파라미터를 받을 수 있어야 함."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            divergence="프레임워크 선택에서 의견 차이",
+        )
+        assert mock_conn.execute.call_count >= 1
+
+    def test_upsert_accepts_has_synthesis_parameter(self, repo, mock_conn):
+        """has_synthesis 파라미터를 받을 수 있어야 함."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            has_synthesis=True,
+        )
+        assert mock_conn.execute.call_count >= 1
+
+    def test_upsert_includes_consensus_in_sql(self, repo, mock_conn):
+        """INSERT SQL에 consensus 컬럼이 포함되어야 함."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            consensus="합의 내용",
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        assert "consensus" in insert_sql
+
+    def test_upsert_includes_divergence_in_sql(self, repo, mock_conn):
+        """INSERT SQL에 divergence 컬럼이 포함되어야 함."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            divergence="분기 내용",
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        assert "divergence" in insert_sql
+
+    def test_upsert_includes_has_synthesis_in_sql(self, repo, mock_conn):
+        """INSERT SQL에 has_synthesis 컬럼이 포함되어야 함."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            has_synthesis=True,
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        assert "has_synthesis" in insert_sql
+
+    def test_upsert_consensus_in_on_conflict_update(self, repo, mock_conn):
+        """ON CONFLICT UPDATE에 consensus가 포함되어야 함."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            consensus="합의",
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        # Check ON CONFLICT section includes consensus
+        conflict_part = insert_sql.split("ON CONFLICT")[1] if "ON CONFLICT" in insert_sql else ""
+        assert "consensus" in conflict_part
+
+    def test_upsert_divergence_in_on_conflict_update(self, repo, mock_conn):
+        """ON CONFLICT UPDATE에 divergence가 포함되어야 함."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            divergence="분기",
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        conflict_part = insert_sql.split("ON CONFLICT")[1] if "ON CONFLICT" in insert_sql else ""
+        assert "divergence" in conflict_part
+
+    def test_upsert_has_synthesis_in_on_conflict_update(self, repo, mock_conn):
+        """ON CONFLICT UPDATE에 has_synthesis가 포함되어야 함."""
+        repo.upsert_bundle(
+            **self._base_kwargs(),
+            has_synthesis=True,
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        conflict_part = insert_sql.split("ON CONFLICT")[1] if "ON CONFLICT" in insert_sql else ""
+        assert "has_synthesis" in conflict_part
+
+    def test_upsert_defaults_consensus_none(self, repo, mock_conn):
+        """consensus 미지정 시 None으로 전달."""
+        repo.upsert_bundle(**self._base_kwargs())
+        calls = mock_conn.execute.call_args_list
+        params = calls[0][0][1]
+        assert params.get("consensus") is None
+
+    def test_upsert_defaults_has_synthesis_false(self, repo, mock_conn):
+        """has_synthesis 미지정 시 False로 전달."""
+        repo.upsert_bundle(**self._base_kwargs())
+        calls = mock_conn.execute.call_args_list
+        params = calls[0][0][1]
+        assert params.get("has_synthesis") is False
+
+    def test_upsert_responses_with_key_claims_and_stance(self, repo, mock_conn):
+        """responses dict에 key_claims, stance가 있으면 bundle_responses INSERT에 포함."""
+        kwargs = self._base_kwargs()
+        kwargs["responses"] = [{
+            "platform": "claude",
+            "model": "sonnet",
+            "turn_count": 5,
+            "key_claims": ["Python이 최고", "타입 힌트 중요"],
+            "stance": "긍정적",
+        }]
+        repo.upsert_bundle(**kwargs)
+        response_inserts = [
+            c for c in mock_conn.execute.call_args_list
+            if "bundle_responses" in str(c[0][0]) and "INSERT" in str(c[0][0]).upper()
+        ]
+        assert len(response_inserts) == 1
+        sql = response_inserts[0][0][0]
+        assert "key_claims" in sql
+        assert "stance" in sql
+
+
+class TestAddResponseToBundleWithMetadata:
+    """add_response_to_bundle()에 key_claims, stance 파라미터 추가."""
+
+    def test_accepts_key_claims_parameter(self, repo, mock_conn):
+        """key_claims 파라미터를 받을 수 있어야 함."""
+        repo.add_response_to_bundle(
+            bundle_id="20260228-test-a1b2",
+            platform="chatgpt",
+            model="gpt-4o",
+            turn_count=5,
+            key_claims=["주장1", "주장2"],
+        )
+        assert mock_conn.execute.call_count >= 1
+
+    def test_accepts_stance_parameter(self, repo, mock_conn):
+        """stance 파라미터를 받을 수 있어야 함."""
+        repo.add_response_to_bundle(
+            bundle_id="20260228-test-a1b2",
+            platform="chatgpt",
+            model="gpt-4o",
+            turn_count=5,
+            stance="긍정적",
+        )
+        assert mock_conn.execute.call_count >= 1
+
+    def test_key_claims_in_insert_sql(self, repo, mock_conn):
+        """INSERT SQL에 key_claims 컬럼이 포함되어야 함."""
+        repo.add_response_to_bundle(
+            bundle_id="20260228-test-a1b2",
+            platform="chatgpt",
+            key_claims=["주장1"],
+            stance="중립",
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        assert "key_claims" in insert_sql
+
+    def test_stance_in_insert_sql(self, repo, mock_conn):
+        """INSERT SQL에 stance 컬럼이 포함되어야 함."""
+        repo.add_response_to_bundle(
+            bundle_id="20260228-test-a1b2",
+            platform="chatgpt",
+            stance="긍정적",
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        assert "stance" in insert_sql
+
+    def test_key_claims_in_on_conflict_update(self, repo, mock_conn):
+        """ON CONFLICT UPDATE에 key_claims가 포함되어야 함."""
+        repo.add_response_to_bundle(
+            bundle_id="20260228-test-a1b2",
+            platform="chatgpt",
+            key_claims=["주장1"],
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        assert "key_claims = EXCLUDED.key_claims" in insert_sql
+
+    def test_stance_in_on_conflict_update(self, repo, mock_conn):
+        """ON CONFLICT UPDATE에 stance가 포함되어야 함."""
+        repo.add_response_to_bundle(
+            bundle_id="20260228-test-a1b2",
+            platform="chatgpt",
+            stance="부정적",
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        assert "stance = EXCLUDED.stance" in insert_sql
+
+    def test_key_claims_defaults_to_empty_list(self, repo, mock_conn):
+        """key_claims 미지정 시 빈 리스트로 JSONB 전달."""
+        repo.add_response_to_bundle(
+            bundle_id="20260228-test-a1b2",
+            platform="chatgpt",
+        )
+        calls = mock_conn.execute.call_args_list
+        insert_sql = calls[0][0][0]
+        assert "key_claims" in insert_sql
+
+
+class TestUpdateBundleMetaWithMetadata:
+    """update_bundle_meta()에 consensus, divergence, has_synthesis 파라미터 추가."""
+
+    def test_accepts_consensus_parameter(self, repo, mock_conn):
+        """consensus 파라미터를 받을 수 있어야 함."""
+        repo.update_bundle_meta(
+            bundle_id="20260228-test-a1b2",
+            summary="요약",
+            domains=["dev"],
+            topics=["llm"],
+            consensus="모든 LLM 동의",
+        )
+        assert mock_conn.execute.call_count >= 1
+
+    def test_accepts_divergence_parameter(self, repo, mock_conn):
+        """divergence 파라미터를 받을 수 있어야 함."""
+        repo.update_bundle_meta(
+            bundle_id="20260228-test-a1b2",
+            summary="요약",
+            domains=["dev"],
+            topics=["llm"],
+            divergence="의견 불일치",
+        )
+        assert mock_conn.execute.call_count >= 1
+
+    def test_accepts_has_synthesis_parameter(self, repo, mock_conn):
+        """has_synthesis 파라미터를 받을 수 있어야 함."""
+        repo.update_bundle_meta(
+            bundle_id="20260228-test-a1b2",
+            summary="요약",
+            domains=["dev"],
+            topics=["llm"],
+            has_synthesis=True,
+        )
+        assert mock_conn.execute.call_count >= 1
+
+    def test_consensus_in_update_sql(self, repo, mock_conn):
+        """UPDATE SQL에 consensus가 포함되어야 함."""
+        repo.update_bundle_meta(
+            bundle_id="20260228-test-a1b2",
+            summary="요약",
+            domains=["dev"],
+            topics=["llm"],
+            consensus="합의",
+        )
+        calls = mock_conn.execute.call_args_list
+        update_sql = calls[0][0][0]
+        assert "consensus" in update_sql
+
+    def test_divergence_in_update_sql(self, repo, mock_conn):
+        """UPDATE SQL에 divergence가 포함되어야 함."""
+        repo.update_bundle_meta(
+            bundle_id="20260228-test-a1b2",
+            summary="요약",
+            domains=["dev"],
+            topics=["llm"],
+            divergence="분기",
+        )
+        calls = mock_conn.execute.call_args_list
+        update_sql = calls[0][0][0]
+        assert "divergence" in update_sql
+
+    def test_has_synthesis_in_update_sql(self, repo, mock_conn):
+        """UPDATE SQL에 has_synthesis가 포함되어야 함."""
+        repo.update_bundle_meta(
+            bundle_id="20260228-test-a1b2",
+            summary="요약",
+            domains=["dev"],
+            topics=["llm"],
+            has_synthesis=True,
+        )
+        calls = mock_conn.execute.call_args_list
+        update_sql = calls[0][0][0]
+        assert "has_synthesis" in update_sql
+
+    def test_defaults_consensus_none(self, repo, mock_conn):
+        """consensus 미지정 시 None으로 전달 (기존 값 유지)."""
+        repo.update_bundle_meta(
+            bundle_id="20260228-test-a1b2",
+            summary="요약",
+            domains=["dev"],
+            topics=["llm"],
+        )
+        calls = mock_conn.execute.call_args_list
+        params = calls[0][0][1]
+        assert params.get("consensus") is None
+
+
+class TestGetBundleByIdWithMetadata:
+    """get_bundle_by_id()가 consensus, divergence, has_synthesis를 반환."""
+
+    def test_returns_consensus_field(self, repo, mock_conn):
+        """반환 dict에 consensus 필드가 있어야 함."""
+        mock_conn.execute.return_value.fetchone.return_value = (
+            "20260228-test-a1b2", "personal", "LLM 비교",
+            "3개 LLM 비교 요약",
+            datetime(2026, 2, 28, tzinfo=timezone.utc),
+            "dev", "llm",
+            "모든 LLM 동의", "프레임워크 차이", True,
+        )
+        result = repo.get_bundle_by_id("20260228-test-a1b2")
+        assert result is not None
+        assert "consensus" in result
+        assert result["consensus"] == "모든 LLM 동의"
+
+    def test_returns_divergence_field(self, repo, mock_conn):
+        """반환 dict에 divergence 필드가 있어야 함."""
+        mock_conn.execute.return_value.fetchone.return_value = (
+            "20260228-test-a1b2", "personal", "LLM 비교",
+            "3개 LLM 비교 요약",
+            datetime(2026, 2, 28, tzinfo=timezone.utc),
+            "dev", "llm",
+            "합의", "의견 차이", False,
+        )
+        result = repo.get_bundle_by_id("20260228-test-a1b2")
+        assert result is not None
+        assert "divergence" in result
+        assert result["divergence"] == "의견 차이"
+
+    def test_returns_has_synthesis_field(self, repo, mock_conn):
+        """반환 dict에 has_synthesis 필드가 있어야 함."""
+        mock_conn.execute.return_value.fetchone.return_value = (
+            "20260228-test-a1b2", "personal", "LLM 비교",
+            "요약",
+            datetime(2026, 2, 28, tzinfo=timezone.utc),
+            "dev", "llm",
+            None, None, True,
+        )
+        result = repo.get_bundle_by_id("20260228-test-a1b2")
+        assert result is not None
+        assert "has_synthesis" in result
+        assert result["has_synthesis"] is True
+
+    def test_consensus_in_select_sql(self, repo, mock_conn):
+        """SELECT SQL에 consensus 컬럼이 포함되어야 함."""
+        mock_conn.execute.return_value.fetchone.return_value = None
+        repo.get_bundle_by_id("20260228-test-a1b2")
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "consensus" in sql
+
+    def test_divergence_in_select_sql(self, repo, mock_conn):
+        """SELECT SQL에 divergence 컬럼이 포함되어야 함."""
+        mock_conn.execute.return_value.fetchone.return_value = None
+        repo.get_bundle_by_id("20260228-test-a1b2")
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "divergence" in sql
+
+    def test_has_synthesis_in_select_sql(self, repo, mock_conn):
+        """SELECT SQL에 has_synthesis 컬럼이 포함되어야 함."""
+        mock_conn.execute.return_value.fetchone.return_value = None
+        repo.get_bundle_by_id("20260228-test-a1b2")
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "has_synthesis" in sql
+
+
+class TestSearchClaims:
+    """search_claims(): key_claims에서 텍스트 검색."""
+
+    def test_method_exists(self, repo):
+        """search_claims 메서드가 존재해야 함."""
+        assert hasattr(repo, "search_claims")
+
+    def test_returns_list_of_dicts(self, repo, mock_conn):
+        """검색 결과는 dict 리스트."""
+        ts = datetime(2026, 2, 28, tzinfo=timezone.utc)
+        mock_conn.execute.return_value.fetchall.return_value = [
+            ("20260228-test-a1b2", "personal", "LLM 비교", "요약", ts,
+             "claude", '["Python이 최고"]', "긍정적"),
+        ]
+        result = repo.search_claims("Python")
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["bundle_id"] == "20260228-test-a1b2"
+
+    def test_result_includes_platform_and_claims(self, repo, mock_conn):
+        """결과에 platform, key_claims, stance가 포함되어야 함."""
+        ts = datetime(2026, 2, 28, tzinfo=timezone.utc)
+        mock_conn.execute.return_value.fetchall.return_value = [
+            ("20260228-test-a1b2", "personal", "LLM 비교", "요약", ts,
+             "claude", '["Python이 최고"]', "긍정적"),
+        ]
+        result = repo.search_claims("Python")
+        assert "platform" in result[0]
+        assert "key_claims" in result[0]
+        assert "stance" in result[0]
+
+    def test_sql_uses_jsonb_array_elements(self, repo, mock_conn):
+        """SQL이 jsonb_array_elements_text를 사용해야 함."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_claims("Python")
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "jsonb_array_elements_text" in sql
+
+    def test_sql_uses_ilike_for_case_insensitive(self, repo, mock_conn):
+        """대소문자 무시 검색을 위해 ILIKE 사용."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_claims("python")
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "ILIKE" in sql
+
+    def test_with_kb_filter(self, repo, mock_conn):
+        """kb 필터링 시 SQL에 kb 조건 추가."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_claims("Python", kb="personal")
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "kb" in sql.lower()
+
+    def test_limit_parameter(self, repo, mock_conn):
+        """limit 파라미터가 SQL에 반영."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_claims("Python", limit=5)
+        call_args = mock_conn.execute.call_args
+        params = call_args[0][1]
+        assert params.get("limit") == 5
+
+    def test_empty_result(self, repo, mock_conn):
+        """검색 결과 없으면 빈 리스트 반환."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        result = repo.search_claims("nonexistent")
+        assert result == []
+
+    def test_query_wrapped_with_percent(self, repo, mock_conn):
+        """검색어가 %query% 형태로 ILIKE에 전달."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_claims("Python")
+        call_args = mock_conn.execute.call_args
+        params = call_args[0][1]
+        assert params.get("pattern") == "%Python%"
