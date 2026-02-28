@@ -94,10 +94,13 @@ class BatchProcessor:
                 result = self._pipeline.ingest_file(f)
                 if result is None:
                     skipped += 1
+                elif result.get("status", "").startswith("skip_"):
+                    skipped += 1
                 else:
                     success += 1
                 if self._watch_dir is not None:
-                    move_to_done(f, self._watch_dir)
+                    if result is None or result.get("status") != "skip_file_not_found":
+                        move_to_done(f, self._watch_dir)
                 checkpoint["completed"].append(f_str)
             except Exception:
                 errors += 1
@@ -134,11 +137,15 @@ class BatchProcessor:
         # Run concurrent ingest
         stats = asyncio.run(self._engine.ingest_batch(pending))
 
-        # Update checkpoint with successful files
+        # Update checkpoint: only mark non-error files as completed
+        error_paths = {str(r.path) for r in stats.results if r.status == "error"}
         for f in pending:
             f_str = str(f)
-            if f_str not in checkpoint["completed"]:
+            if f_str not in error_paths and f_str not in checkpoint["completed"]:
                 checkpoint["completed"].append(f_str)
+            elif f_str in error_paths:
+                if f_str not in checkpoint.get("failed", []):
+                    checkpoint.setdefault("failed", []).append(f_str)
         self._save_checkpoint(checkpoint)
 
         return {

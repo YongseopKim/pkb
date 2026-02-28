@@ -207,9 +207,12 @@ class IngestPipeline:
         """
         from pkb.parser.exceptions import ParseError
 
-        # 1. Parse input file (graceful skip on parse error)
+        # 1. Parse input file (graceful skip on parse error or missing file)
         try:
             conv = parse_file(file_path)
+        except FileNotFoundError as e:
+            logger.warning("File not found, skipping %s: %s", file_path.name, e)
+            return {"status": "skip_file_not_found", "reason": str(e)}
         except ParseError as e:
             logger.warning("Parse error, skipping %s: %s", file_path.name, e)
             return {"status": "skip_parse_error", "reason": str(e)}

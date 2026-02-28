@@ -1372,6 +1372,61 @@ class TestIngestGracefulSkip:
         result = pipeline.ingest_file(md_file)
         assert result["status"] == "skip_parse_error"
 
+    def test_file_not_found_returns_skip_dict(self, tmp_path):
+        """FileNotFoundError 발생 시 에러 대신 skip dict 반환."""
+        repo = MagicMock()
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+
+        pipeline = IngestPipeline(
+            repo=repo, chunk_store=chunk_store, meta_gen=meta_gen,
+            kb_path=tmp_path, kb_name="test", domains=[], topics=[],
+        )
+
+        # Non-existent file path
+        missing_file = tmp_path / "nonexistent.md"
+
+        result = pipeline.ingest_file(missing_file)
+        assert result is not None
+        assert result["status"] == "skip_file_not_found"
+
+    def test_file_not_found_does_not_raise(self, tmp_path):
+        """FileNotFoundError가 exception으로 전파되지 않음."""
+        repo = MagicMock()
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+
+        pipeline = IngestPipeline(
+            repo=repo, chunk_store=chunk_store, meta_gen=meta_gen,
+            kb_path=tmp_path, kb_name="test", domains=[], topics=[],
+        )
+
+        missing_file = tmp_path / "해저 데이터센터/grok.md"
+
+        # Should not raise even with Korean path
+        result = pipeline.ingest_file(missing_file)
+        assert result["status"] == "skip_file_not_found"
+
+    def test_file_deleted_after_discovery_returns_skip(self, tmp_path):
+        """파일 발견 후 삭제되어도 graceful skip 반환."""
+        repo = MagicMock()
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+
+        pipeline = IngestPipeline(
+            repo=repo, chunk_store=chunk_store, meta_gen=meta_gen,
+            kb_path=tmp_path, kb_name="test", domains=[], topics=[],
+        )
+
+        # Create then delete file to simulate race condition
+        md_file = tmp_path / "race.md"
+        md_file.write_text("# Test\n\ncontent")
+        md_file.unlink()
+
+        result = pipeline.ingest_file(md_file)
+        assert result is not None
+        assert result["status"] == "skip_file_not_found"
+
 
 class TestNormalizeUrl:
     """Tests for _normalize_url() URL normalization."""

@@ -301,3 +301,74 @@ class TestBatchProcessorConcurrent:
         assert checkpoint_path.exists()
         data = yaml.safe_load(checkpoint_path.read_text())
         assert len(data["completed"]) == 6
+
+    def test_concurrent_checkpoint_excludes_failed(self, sample_source_dir, tmp_path):
+        """Concurrent path: 실패한 파일은 checkpoint completed에 포함되지 않아야 함."""
+        from pkb.engine import IngestEngine
+        from pkb.models.config import ConcurrencyConfig
+
+        def flaky_ingest(path):
+            if "chatgpt" in str(path):
+                raise RuntimeError("LLM timeout")
+            return {"bundle_id": "ok-bundle"}
+
+        config = ConcurrencyConfig(max_concurrent_files=2)
+        engine = IngestEngine(ingest_fn=flaky_ingest, concurrency=config)
+        mock_pl = MagicMock()
+        mock_pl.ingest_file = flaky_ingest
+
+        checkpoint_path = tmp_path / "checkpoint.yaml"
+        processor = BatchProcessor(
+            pipeline=mock_pl,
+            checkpoint_path=checkpoint_path,
+            engine=engine,
+        )
+        stats = processor.process(sample_source_dir)
+
+        assert stats["errors"] == 3  # chatgpt files
+        assert stats["success"] == 3  # claude files
+
+        data = yaml.safe_load(checkpoint_path.read_text())
+        # Failed files should NOT be in completed list
+        assert len(data["completed"]) == 3
+        for path_str in data["completed"]:
+            assert "chatgpt" not in path_str
+
+    def test_concurrent_move_to_done_only_on_success(self, tmp_path):
+        """Concurrent batch: skip/error 결과일 때 move_to_done 호출하지 않음."""
+        from pkb.engine import IngestEngine
+        from pkb.models.config import ConcurrencyConfig
+
+        # Create watch_dir with files
+        watch_dir = tmp_path / "inbox"
+        topic_dir = watch_dir / "test_topic"
+        topic_dir.mkdir(parents=True)
+
+        for name in ["success.md", "skip.md", "error.md"]:
+            (topic_dir / name).write_text(f"# {name}\n\ncontent here for test")
+
+        def mock_ingest(path):
+            name = path.name
+            if "skip" in name:
+                return {"status": "skip_parse_error", "reason": "test skip"}
+            if "error" in name:
+                raise RuntimeError("test error")
+            return {"bundle_id": "ok-bundle"}
+
+        config = ConcurrencyConfig(max_concurrent_files=2)
+        engine = IngestEngine(ingest_fn=mock_ingest, concurrency=config)
+        mock_pipeline = MagicMock()
+        mock_pipeline.ingest_file = mock_ingest
+
+        processor = BatchProcessor(
+            pipeline=mock_pipeline,
+            checkpoint_path=tmp_path / "checkpoint.yaml",
+            engine=engine,
+            watch_dir=watch_dir,
+        )
+        processor.process(watch_dir)
+
+        # skip.md should remain in original location (not moved)
+        assert (topic_dir / "skip.md").exists()
+        # error.md should remain in original location (not moved)
+        assert (topic_dir / "error.md").exists()
