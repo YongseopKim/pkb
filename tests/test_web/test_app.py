@@ -177,3 +177,48 @@ class TestChatRoute:
         resp = client.get("/chat")
         assert resp.status_code == 200
         assert "Chat" in resp.text
+
+
+class TestDashboardEnhanced:
+    def test_dashboard_has_recent_activity(self, client, mock_state):
+        """Dashboard should show recent bundles with metadata."""
+        mock_state.repo.list_all_bundle_ids.return_value = ["b1", "b2"]
+        mock_state.repo.list_bundles_since.return_value = [
+            {"bundle_id": "b1", "question": "Q1", "kb": "personal", "created_at": "2026-02-28"},
+        ]
+        mock_state.repo.count_bundles_by_domain.return_value = [
+            {"domain": "dev", "count": 5},
+        ]
+        mock_state.repo.count_bundles_by_topic.return_value = [
+            {"topic": "python", "count": 2},
+        ]
+        mock_state.repo.count_relations.return_value = 3
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "Recent Activity" in resp.text or "recent" in resp.text.lower()
+
+    def test_dashboard_has_knowledge_gaps(self, client, mock_state):
+        """Dashboard should show knowledge gap cards."""
+        mock_state.repo.list_all_bundle_ids.return_value = ["b1"]
+        mock_state.repo.list_bundles_since.return_value = []
+        mock_state.repo.count_bundles_by_domain.return_value = [
+            {"domain": "dev", "count": 5},
+        ]
+        mock_state.repo.count_bundles_by_topic.return_value = [
+            {"topic": "k8s", "count": 1},
+        ]
+        mock_state.repo.count_relations.return_value = 0
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "Knowledge Gaps" in resp.text or "gaps" in resp.text.lower()
+
+    def test_dashboard_has_domain_chart(self, client, mock_state):
+        """Dashboard should include domain distribution chart."""
+        mock_state.repo.list_all_bundle_ids.return_value = ["b1"]
+        mock_state.repo.list_bundles_since.return_value = []
+        mock_state.repo.count_bundles_by_domain.return_value = []
+        mock_state.repo.count_bundles_by_topic.return_value = []
+        mock_state.repo.count_relations.return_value = 0
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "domainMiniChart" in resp.text or "chart.js" in resp.text.lower()

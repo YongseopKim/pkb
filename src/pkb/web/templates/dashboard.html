@@ -1,19 +1,108 @@
 {% extends "base.html" %}
 {% block title %}PKB — Dashboard{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+.dashboard-grid { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-top:1rem; }
+.card { background:#fff; padding:1rem 1.5rem; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.1); }
+.card h3 { margin-bottom:0.8rem; color:#2c3e50; font-size:1.1rem; }
+.gap-badge { display:inline-block; background:#e74c3c; color:#fff; padding:0.2rem 0.6rem; border-radius:12px; font-size:0.8rem; margin:0.2rem; }
+.activity-item { padding:0.4rem 0; border-bottom:1px solid #f0f0f0; }
+.activity-item:last-child { border-bottom:none; }
+.mini-chart { max-height:200px; }
+</style>
+{% endblock %}
 {% block content %}
 <h1>Dashboard</h1>
+
 <div class="stats">
     <div class="stat-card">
         <h2>{{ total_bundles }}</h2>
         <p>Total Bundles</p>
     </div>
+    <div class="stat-card">
+        <h2>{{ overview.total_relations }}</h2>
+        <p>Relations</p>
+    </div>
+    <div class="stat-card">
+        <h2>{{ overview.domain_count }}</h2>
+        <p>Domains</p>
+    </div>
+    <div class="stat-card">
+        <h2>{{ overview.topic_count }}</h2>
+        <p>Topics</p>
+    </div>
 </div>
-{% if recent_bundles %}
-<h2>Recent Bundles</h2>
-<ul>
-    {% for bid in recent_bundles %}
-    <li><a href="/bundles/{{ bid }}">{{ bid }}</a></li>
-    {% endfor %}
-</ul>
-{% endif %}
+
+<div class="dashboard-grid">
+    <div class="card">
+        <h3>Recent Activity</h3>
+        {% if recent_bundles %}
+        {% for b in recent_bundles %}
+        <div class="activity-item">
+            <a href="/bundles/{{ b.bundle_id }}">{{ b.bundle_id }}</a>
+            <span style="color:#7f8c8d;font-size:0.85rem">{{ b.kb }}</span>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p style="color:#7f8c8d">No recent activity (last 7 days)</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h3>Knowledge Gaps</h3>
+        {% if gaps %}
+        {% for g in gaps %}
+        <span class="gap-badge">{{ g.topic }} ({{ g.count }})</span>
+        {% endfor %}
+        <p style="margin-top:0.5rem"><a href="/analytics">View all gaps &raquo;</a></p>
+        {% else %}
+        <p style="color:#7f8c8d">No knowledge gaps detected</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h3>Domain Distribution</h3>
+        <canvas id="domainMiniChart" class="mini-chart"></canvas>
+    </div>
+
+    <div class="card">
+        <h3>Growth Trend</h3>
+        <canvas id="trendMiniChart" class="mini-chart"></canvas>
+    </div>
+</div>
+
+<script>
+const COLORS = ['#4dc9f6','#f67019','#f53794','#537bc4','#acc236','#166a8f','#00a950','#58595b'];
+
+async function loadMiniCharts() {
+    const [domains, trend] = await Promise.all([
+        fetch('/analytics/api/domains').then(r => r.json()),
+        fetch('/analytics/api/trend').then(r => r.json()),
+    ]);
+
+    if (domains.length) {
+        new Chart(document.getElementById('domainMiniChart'), {
+            type: 'doughnut',
+            data: {
+                labels: domains.map(d => d.domain),
+                datasets: [{data: domains.map(d => d.count), backgroundColor: COLORS}]
+            },
+            options: {plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}}}}
+        });
+    }
+
+    if (trend.length) {
+        new Chart(document.getElementById('trendMiniChart'), {
+            type: 'line',
+            data: {
+                labels: trend.map(t => t.month),
+                datasets: [{label:'Bundles',data: trend.map(t => t.count), borderColor:'#4dc9f6',fill:true,backgroundColor:'rgba(77,201,246,0.1)'}]
+            },
+            options: {plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+        });
+    }
+}
+loadMiniCharts();
+</script>
 {% endblock %}

@@ -60,12 +60,24 @@ def create_app(state: AppState) -> FastAPI:
 
     @app.get("/")
     def dashboard(request: Request):
+        from datetime import datetime, timedelta, timezone
+
+        from pkb.analytics import AnalyticsEngine
+
         pkb: AppState = request.app.state.pkb
+        engine = AnalyticsEngine(repo=pkb.repo)
+
         bundle_ids = pkb.repo.list_all_bundle_ids()
-        recent = bundle_ids[-5:] if bundle_ids else []
+        since = datetime.now(timezone.utc) - timedelta(days=7)
+        recent = pkb.repo.list_bundles_since(since)
+        overview = engine.overview()
+        gaps = engine.knowledge_gaps(threshold=3)
+
         return templates.TemplateResponse(request, "dashboard.html", {
             "total_bundles": len(bundle_ids),
-            "recent_bundles": recent,
+            "recent_bundles": recent[:10],
+            "overview": overview,
+            "gaps": gaps[:5],
         })
 
     return app
