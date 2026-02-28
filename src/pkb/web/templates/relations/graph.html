@@ -1,0 +1,366 @@
+{% extends "base.html" %}
+{% block title %}PKB — Knowledge Graph{% endblock %}
+{% block head %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+    .graph-container {
+        width: 100%;
+        height: 600px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: #fafafa;
+        position: relative;
+        overflow: hidden;
+    }
+    .graph-container svg {
+        width: 100%;
+        height: 100%;
+    }
+    .graph-tooltip {
+        position: absolute;
+        padding: 8px 12px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+        max-width: 300px;
+        z-index: 10;
+    }
+    .graph-legend {
+        display: flex;
+        gap: 1.5rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.9rem;
+    }
+    .legend-line {
+        width: 30px;
+        height: 3px;
+        border-radius: 2px;
+    }
+    .legend-similar { background: #4a90d9; border-top: 2px dashed #4a90d9; background: none; }
+    .legend-related { background: #27ae60; }
+    .legend-sequel { background: #e67e22; }
+    .node-circle {
+        cursor: pointer;
+        stroke: #fff;
+        stroke-width: 1.5px;
+    }
+    .node-label {
+        font-size: 10px;
+        pointer-events: none;
+        fill: #333;
+    }
+    .link-line {
+        fill: none;
+        stroke-opacity: 0.6;
+    }
+    .link-similar { stroke: #4a90d9; stroke-dasharray: 5, 3; }
+    .link-related { stroke: #27ae60; }
+    .link-sequel { stroke: #e67e22; }
+    .graph-filters {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+    }
+    .graph-filters select {
+        padding: 0.3rem 0.5rem;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+    }
+    .detail-panel {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: #f0f4f8;
+        border-radius: 8px;
+        display: none;
+    }
+    .detail-panel.active { display: block; }
+    .detail-panel h3 { margin-top: 0; }
+</style>
+{% endblock %}
+{% block content %}
+<h1>Knowledge Graph ({{ total }} relations)</h1>
+
+<div class="graph-legend">
+    <div class="legend-item">
+        <div class="legend-line legend-similar"></div>
+        <span>Similar (dashed blue)</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-line legend-related"></div>
+        <span>Related (green)</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-line legend-sequel"></div>
+        <span>Sequel (orange)</span>
+    </div>
+</div>
+
+<div class="graph-filters">
+    <label>
+        Domain:
+        <select id="filter-domain">
+            <option value="all">All</option>
+        </select>
+    </label>
+    <label>
+        Type:
+        <select id="filter-type">
+            <option value="all">All</option>
+            <option value="similar">Similar</option>
+            <option value="related">Related</option>
+            <option value="sequel">Sequel</option>
+        </select>
+    </label>
+</div>
+
+<div class="graph-container" id="graph-container">
+    <svg id="graph-svg"></svg>
+    <div class="graph-tooltip" id="graph-tooltip"></div>
+</div>
+
+<div class="detail-panel" id="detail-panel">
+    <h3 id="detail-title"></h3>
+    <p id="detail-question"></p>
+    <p><strong>Domains:</strong> <span id="detail-domains"></span></p>
+    <p><strong>Topics:</strong> <span id="detail-topics"></span></p>
+    <p><a id="detail-link" href="#">View bundle</a></p>
+</div>
+
+<script>
+(function() {
+    const container = document.getElementById("graph-container");
+    const svg = d3.select("#graph-svg");
+    const tooltip = document.getElementById("graph-tooltip");
+    const detailPanel = document.getElementById("detail-panel");
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+
+    const colorMap = {
+        "dev": "#4a90d9",
+        "data": "#27ae60",
+        "infra": "#e67e22",
+        "product": "#9b59b6",
+        "business": "#e74c3c",
+        "research": "#1abc9c",
+        "life": "#f39c12",
+        "misc": "#95a5a6"
+    };
+
+    function domainColor(domains) {
+        if (!domains) return "#95a5a6";
+        var first = domains.split(",")[0].trim().toLowerCase();
+        return colorMap[first] || "#95a5a6";
+    }
+
+    function linkColor(type) {
+        if (type === "similar") return "#4a90d9";
+        if (type === "related") return "#27ae60";
+        if (type === "sequel") return "#e67e22";
+        return "#999";
+    }
+
+    function linkDash(type) {
+        return type === "similar" ? "5,3" : "none";
+    }
+
+    fetch("/relations/api/graph")
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.nodes.length) {
+                container.textContent = "No relations to display.";
+                return;
+            }
+
+            /* Populate domain filter */
+            var domains = new Set();
+            data.nodes.forEach(function(n) {
+                if (n.domains) {
+                    n.domains.split(",").forEach(function(d) {
+                        domains.add(d.trim());
+                    });
+                }
+            });
+            var domainSelect = document.getElementById("filter-domain");
+            Array.from(domains).sort().forEach(function(d) {
+                var opt = document.createElement("option");
+                opt.value = d;
+                opt.textContent = d;
+                domainSelect.appendChild(opt);
+            });
+
+            /* Build index for quick lookup */
+            var nodeMap = {};
+            data.nodes.forEach(function(n) { nodeMap[n.id] = n; });
+
+            /* D3 force simulation */
+            var simulation = d3.forceSimulation(data.nodes)
+                .force("link", d3.forceLink(data.edges).id(function(d) { return d.id; }).distance(120))
+                .force("charge", d3.forceManyBody().strength(-300))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("collision", d3.forceCollide().radius(20));
+
+            /* Zoom */
+            var g = svg.append("g");
+            svg.call(d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on("zoom", function(event) {
+                    g.attr("transform", event.transform);
+                })
+            );
+
+            /* Arrow markers for sequel links */
+            svg.append("defs").append("marker")
+                .attr("id", "arrow-sequel")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 22)
+                .attr("refY", 0)
+                .attr("markerWidth", 6)
+                .attr("markerHeight", 6)
+                .attr("orient", "auto")
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#e67e22");
+
+            /* Links */
+            var link = g.append("g")
+                .selectAll("line")
+                .data(data.edges)
+                .enter().append("line")
+                .attr("class", function(d) { return "link-line link-" + d.type; })
+                .attr("stroke", function(d) { return linkColor(d.type); })
+                .attr("stroke-width", function(d) { return Math.max(1, d.score * 3); })
+                .attr("stroke-dasharray", function(d) { return linkDash(d.type); })
+                .attr("marker-end", function(d) {
+                    return d.type === "sequel" ? "url(#arrow-sequel)" : null;
+                });
+
+            /* Nodes */
+            var node = g.append("g")
+                .selectAll("circle")
+                .data(data.nodes)
+                .enter().append("circle")
+                .attr("class", "node-circle")
+                .attr("r", 10)
+                .attr("fill", function(d) { return domainColor(d.domains); })
+                .call(d3.drag()
+                    .on("start", function(event, d) {
+                        if (!event.active) simulation.alphaTarget(0.3).restart();
+                        d.fx = d.x;
+                        d.fy = d.y;
+                    })
+                    .on("drag", function(event, d) {
+                        d.fx = event.x;
+                        d.fy = event.y;
+                    })
+                    .on("end", function(event, d) {
+                        if (!event.active) simulation.alphaTarget(0);
+                        d.fx = null;
+                        d.fy = null;
+                    })
+                );
+
+            /* Node labels */
+            var label = g.append("g")
+                .selectAll("text")
+                .data(data.nodes)
+                .enter().append("text")
+                .attr("class", "node-label")
+                .attr("dx", 14)
+                .attr("dy", 4)
+                .text(function(d) {
+                    var q = d.question || d.id;
+                    return q.length > 30 ? q.substring(0, 30) + "..." : q;
+                });
+
+            /* Tooltip on hover */
+            node.on("mouseover", function(event, d) {
+                tooltip.textContent = d.question || d.id;
+                tooltip.style.opacity = "1";
+                tooltip.style.left = (event.offsetX + 15) + "px";
+                tooltip.style.top = (event.offsetY - 10) + "px";
+            }).on("mousemove", function(event) {
+                tooltip.style.left = (event.offsetX + 15) + "px";
+                tooltip.style.top = (event.offsetY - 10) + "px";
+            }).on("mouseout", function() {
+                tooltip.style.opacity = "0";
+            });
+
+            /* Click shows detail panel */
+            node.on("click", function(event, d) {
+                detailPanel.classList.add("active");
+                document.getElementById("detail-title").textContent = d.id;
+                document.getElementById("detail-question").textContent = d.question || "(no question)";
+                document.getElementById("detail-domains").textContent = d.domains || "-";
+                document.getElementById("detail-topics").textContent = d.topics || "-";
+                document.getElementById("detail-link").href = "/bundles/" + d.id;
+            });
+
+            /* Tick */
+            simulation.on("tick", function() {
+                link
+                    .attr("x1", function(d) { return d.source.x; })
+                    .attr("y1", function(d) { return d.source.y; })
+                    .attr("x2", function(d) { return d.target.x; })
+                    .attr("y2", function(d) { return d.target.y; });
+                node
+                    .attr("cx", function(d) { return d.x; })
+                    .attr("cy", function(d) { return d.y; });
+                label
+                    .attr("x", function(d) { return d.x; })
+                    .attr("y", function(d) { return d.y; });
+            });
+
+            /* Filters */
+            function applyFilters() {
+                var domainVal = document.getElementById("filter-domain").value;
+                var typeVal = document.getElementById("filter-type").value;
+
+                node.attr("opacity", function(d) {
+                    if (domainVal !== "all") {
+                        var ds = (d.domains || "").split(",").map(function(x) { return x.trim(); });
+                        if (ds.indexOf(domainVal) === -1) return 0.1;
+                    }
+                    return 1;
+                });
+
+                label.attr("opacity", function(d) {
+                    if (domainVal !== "all") {
+                        var ds = (d.domains || "").split(",").map(function(x) { return x.trim(); });
+                        if (ds.indexOf(domainVal) === -1) return 0.1;
+                    }
+                    return 1;
+                });
+
+                link.attr("opacity", function(d) {
+                    if (typeVal !== "all" && d.type !== typeVal) return 0.05;
+                    if (domainVal !== "all") {
+                        var srcDomains = (nodeMap[d.source.id || d.source] || {}).domains || "";
+                        var tgtDomains = (nodeMap[d.target.id || d.target] || {}).domains || "";
+                        var srcMatch = srcDomains.split(",").map(function(x) { return x.trim(); }).indexOf(domainVal) !== -1;
+                        var tgtMatch = tgtDomains.split(",").map(function(x) { return x.trim(); }).indexOf(domainVal) !== -1;
+                        if (!srcMatch && !tgtMatch) return 0.05;
+                    }
+                    return 0.6;
+                });
+            }
+
+            document.getElementById("filter-domain").addEventListener("change", applyFilters);
+            document.getElementById("filter-type").addEventListener("change", applyFilters);
+        })
+        .catch(function(err) {
+            container.textContent = "Failed to load graph data.";
+        });
+})();
+</script>
+{% endblock %}
