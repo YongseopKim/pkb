@@ -35,6 +35,8 @@ class DuplicateDetector:
             return []
 
         question = bundle["question"]
+        if not question:
+            return []
         kb = bundle.get("kb")
 
         # Search ChromaDB for similar chunks
@@ -79,8 +81,14 @@ class DuplicateDetector:
         """
         bundle_ids = self._repo.list_all_bundle_ids(kb=kb)
         total_new = 0
+        skipped = 0
 
         for bid in bundle_ids:
+            bundle = self._repo.get_bundle_by_id(bid)
+            if bundle and not bundle.get("question"):
+                skipped += 1
+                continue
+
             pairs = self.scan_bundle(bid)
             for pair in pairs:
                 self._repo.insert_duplicate_pair(
@@ -88,7 +96,7 @@ class DuplicateDetector:
                 )
                 total_new += 1
 
-        return {"scanned": len(bundle_ids), "new_pairs": total_new}
+        return {"scanned": len(bundle_ids), "new_pairs": total_new, "skipped": skipped}
 
     def list_pairs(self, status: str | None = None) -> list[dict]:
         """List duplicate pairs, optionally filtered by status."""

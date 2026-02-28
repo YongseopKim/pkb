@@ -43,6 +43,8 @@ class RelationBuilder:
             return []
 
         question = bundle["question"]
+        if not question:
+            return []
         kb = bundle.get("kb")
 
         where = {"kb": kb} if kb else None
@@ -115,8 +117,14 @@ class RelationBuilder:
         """
         bundle_ids = self._repo.list_all_bundle_ids(kb=kb)
         total_new = 0
+        skipped = 0
 
         for bid in bundle_ids:
+            bundle = self._repo.get_bundle_by_id(bid)
+            if bundle and not bundle.get("question"):
+                skipped += 1
+                continue
+
             relations = self.scan_bundle(bid)
             for rel in relations:
                 self._repo.insert_relation(
@@ -127,4 +135,4 @@ class RelationBuilder:
                 )
                 total_new += 1
 
-        return {"scanned": len(bundle_ids), "new_relations": total_new}
+        return {"scanned": len(bundle_ids), "new_relations": total_new, "skipped": skipped}

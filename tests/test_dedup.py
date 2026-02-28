@@ -28,6 +28,32 @@ def detector(mock_repo, mock_chunk_store):
     )
 
 
+class TestScanBundleEmptyQuestion:
+    def test_empty_question_returns_empty(self, detector, mock_repo, mock_chunk_store):
+        """Bundles with empty question should return empty (no TEI call)."""
+        mock_repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-md-only-abc1",
+            "question": "",
+            "kb": "personal",
+        }
+
+        pairs = detector.scan_bundle("20260101-md-only-abc1")
+        assert pairs == []
+        mock_chunk_store.search.assert_not_called()
+
+    def test_none_question_returns_empty(self, detector, mock_repo, mock_chunk_store):
+        """Bundles with None question should return empty."""
+        mock_repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-md-only-abc1",
+            "question": None,
+            "kb": "personal",
+        }
+
+        pairs = detector.scan_bundle("20260101-md-only-abc1")
+        assert pairs == []
+        mock_chunk_store.search.assert_not_called()
+
+
 class TestScanBundle:
     def test_scan_bundle_finds_duplicate(self, detector, mock_repo, mock_chunk_store):
         """When a bundle's question is similar to another bundle's chunk, detect it."""
@@ -121,9 +147,13 @@ class TestScan:
     def test_scan_all_bundles(self, detector, mock_repo, mock_chunk_store):
         """scan() should iterate over all bundles."""
         mock_repo.list_all_bundle_ids.return_value = ["b1", "b2"]
+        b1 = {"bundle_id": "b1", "question": "Q1", "kb": "personal"}
+        b2 = {"bundle_id": "b2", "question": "Q2", "kb": "personal"}
         mock_repo.get_bundle_by_id.side_effect = [
-            {"bundle_id": "b1", "question": "Q1", "kb": "personal"},
-            {"bundle_id": "b2", "question": "Q2", "kb": "personal"},
+            b1,   # scan() check for b1
+            b1,   # scan_bundle() internal lookup
+            b2,   # scan() check for b2
+            b2,   # scan_bundle() internal lookup
         ]
         mock_chunk_store.search.return_value = []
         mock_repo.list_duplicate_pairs.return_value = []
@@ -138,6 +168,24 @@ class TestScan:
 
         detector.scan(kb="work")
         mock_repo.list_all_bundle_ids.assert_called_once_with(kb="work")
+
+    def test_scan_skips_empty_question_bundles(self, detector, mock_repo, mock_chunk_store):
+        """scan() should skip bundles with empty question and track skipped count."""
+        mock_repo.list_all_bundle_ids.return_value = ["empty1", "good1"]
+        good_bundle = {"bundle_id": "good1", "question": "Real question", "kb": "personal"}
+        mock_repo.get_bundle_by_id.side_effect = [
+            # scan() checks each bundle
+            {"bundle_id": "empty1", "question": "", "kb": "personal"},
+            good_bundle,   # scan() check for good1
+            good_bundle,   # scan_bundle -> internal lookup
+        ]
+        mock_chunk_store.search.return_value = []
+        mock_repo.list_duplicate_pairs.return_value = []
+
+        result = detector.scan()
+        assert result["scanned"] == 2
+        assert result["skipped"] == 1
+        mock_chunk_store.search.assert_called_once()
 
 
 class TestListPairs:

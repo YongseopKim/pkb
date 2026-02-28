@@ -178,3 +178,47 @@ class TestRegenerateAll:
         )
         result = regen.regenerate_all()
         assert result["errors"] >= 1
+
+    def test_regenerate_all_continues_on_exception(
+        self, mock_repo, mock_chunk_store, mock_meta_gen, kb_dir
+    ):
+        """If regenerate_bundle raises an exception, regenerate_all should
+        catch it, count as error, and continue to the next bundle."""
+        # Add a second valid bundle
+        bundle2_dir = kb_dir / "bundles" / "20260102-good-xyz9"
+        raw2_dir = bundle2_dir / "_raw"
+        raw2_dir.mkdir(parents=True)
+        jsonl = (
+            '{"_meta":true,"platform":"claude","url":"https://example.com/2",'
+            '"exported_at":"2026-01-02T00:00:00Z","title":"Test 2"}\n'
+            '{"role":"user","content":"Q2","timestamp":"2026-01-02T00:00:01Z"}\n'
+            '{"role":"assistant","content":"A2","timestamp":"2026-01-02T00:00:02Z"}\n'
+        )
+        (raw2_dir / "claude.jsonl").write_text(jsonl)
+
+        # Make meta_gen raise on first call, succeed on second
+        mock_meta_gen.generate_bundle_meta.side_effect = [
+            RuntimeError("LLM API error"),
+            BundleMeta(
+                summary="Good summary",
+                slug="good",
+                domains=["dev"],
+                topics=["python"],
+                pending_topics=[],
+            ),
+        ]
+
+        regen = Regenerator(
+            repo=mock_repo,
+            chunk_store=mock_chunk_store,
+            meta_gen=mock_meta_gen,
+            kb_path=kb_dir,
+            kb_name="personal",
+            domains=["dev"],
+            topics=["python"],
+        )
+        result = regen.regenerate_all()
+        # Should have processed both, one error + one success
+        assert result["total"] == 2
+        assert result["errors"] == 1
+        assert result["regenerated"] == 1

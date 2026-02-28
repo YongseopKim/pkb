@@ -194,6 +194,32 @@ class TestScanBundle:
         assert "related" in types
 
 
+class TestFindSimilarEmptyQuestion:
+    def test_empty_question_returns_empty(self, builder, mock_repo, mock_chunk_store):
+        """Bundles with empty question should return empty (no TEI call)."""
+        mock_repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-md-only-abc1",
+            "question": "",
+            "kb": "personal",
+        }
+
+        relations = builder.find_similar("20260101-md-only-abc1")
+        assert relations == []
+        mock_chunk_store.search.assert_not_called()
+
+    def test_none_question_returns_empty(self, builder, mock_repo, mock_chunk_store):
+        """Bundles with None question should return empty."""
+        mock_repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-md-only-abc1",
+            "question": None,
+            "kb": "personal",
+        }
+
+        relations = builder.find_similar("20260101-md-only-abc1")
+        assert relations == []
+        mock_chunk_store.search.assert_not_called()
+
+
 class TestScanAll:
     def test_scan_all(self, builder, mock_repo, mock_chunk_store):
         """scan() should process all bundles and return stats."""
@@ -209,3 +235,24 @@ class TestScanAll:
         result = builder.scan(kb="personal")
         assert result["scanned"] == 2
         mock_repo.list_all_bundle_ids.assert_called_once_with(kb="personal")
+
+    def test_scan_skips_empty_question_bundles(self, builder, mock_repo, mock_chunk_store):
+        """scan() should skip bundles with empty question and track skipped count."""
+        mock_repo.list_all_bundle_ids.return_value = ["empty1", "good1", "empty2"]
+        good_bundle = {"bundle_id": "good1", "question": "Real question", "kb": "personal"}
+        mock_repo.get_bundle_by_id.side_effect = [
+            # scan() checks each bundle
+            {"bundle_id": "empty1", "question": "", "kb": "personal"},
+            good_bundle,   # scan() check for good1
+            good_bundle,   # scan_bundle -> find_similar() internal lookup
+            good_bundle,   # scan_bundle -> find_related_by_topics() internal lookup
+            {"bundle_id": "empty2", "question": "", "kb": "personal"},
+        ]
+        mock_chunk_store.search.return_value = []
+        mock_repo.find_bundles_sharing_topics.return_value = []
+
+        result = builder.scan(kb="personal")
+        assert result["scanned"] == 3
+        assert result["skipped"] == 2
+        # search should only be called for the non-empty bundle
+        mock_chunk_store.search.assert_called_once()

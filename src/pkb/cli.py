@@ -615,10 +615,14 @@ def dedup_scan(kb: str | None) -> None:
 
     click.echo("Scanning for duplicates...")
     stats = detector.scan(kb=kb)
-    click.echo(
-        f"Done: {stats['scanned']} bundles scanned, "
-        f"{stats['new_pairs']} new duplicate pairs found."
-    )
+    skipped = stats.get("skipped", 0)
+    parts = [
+        f"{stats['scanned']} bundles scanned",
+        f"{stats['new_pairs']} new duplicate pairs found",
+    ]
+    if skipped:
+        parts.append(f"{skipped} skipped (empty question)")
+    click.echo(f"Done: {', '.join(parts)}.")
     repo.close()
 
 
@@ -749,10 +753,14 @@ def relate_scan(kb: str | None, relation_type: str) -> None:
 
     click.echo("Scanning for relations...")
     stats = builder.scan(kb=kb)
-    click.echo(
-        f"Done: {stats['scanned']} bundles scanned, "
-        f"{stats['new_relations']} relations found."
-    )
+    skipped = stats.get("skipped", 0)
+    parts = [
+        f"{stats['scanned']} bundles scanned",
+        f"{stats['new_relations']} relations found",
+    ]
+    if skipped:
+        parts.append(f"{skipped} skipped (empty question)")
+    click.echo(f"Done: {', '.join(parts)}.")
     repo.close()
 
 
@@ -1060,8 +1068,18 @@ def regenerate(bundle_id: str | None, kb: str, all_bundles: bool, dry_run: bool)
     prefix = "[dry-run] " if dry_run else ""
 
     if all_bundles:
+        counter = {"n": 0}
+
         def _progress(bid, status):
-            click.echo(f"  {prefix}[{status}] {bid}")
+            counter["n"] += 1
+            click.echo(f"  {prefix}[{counter['n']}/{stats_hint}] [{status}] {bid}")
+
+        # Count bundles first for progress display
+        bundles_dir = kb_entry.path / "bundles"
+        stats_hint = sum(
+            1 for d in bundles_dir.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+        ) if bundles_dir.exists() else "?"
 
         stats = regen.regenerate_all(progress_callback=_progress)
         click.echo(

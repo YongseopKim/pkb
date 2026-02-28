@@ -157,7 +157,11 @@ class Regenerator:
 
         for bundle_id in bundle_ids:
             stats["total"] += 1
-            result = self.regenerate_bundle(bundle_id)
+            try:
+                result = self.regenerate_bundle(bundle_id)
+            except Exception:
+                logger.exception("Failed to regenerate %s", bundle_id)
+                result = {"bundle_id": bundle_id, "status": "error", "reason": "exception"}
 
             if result["status"] == "regenerated":
                 stats["regenerated"] += 1
