@@ -41,6 +41,7 @@ def create_app(state: AppState) -> FastAPI:
     from pkb.web.routes.analytics import router as analytics_router
     from pkb.web.routes.bundles import router as bundles_router
     from pkb.web.routes.chat import router as chat_router
+    from pkb.web.routes.compare import router as compare_router
     from pkb.web.routes.digest import router as digest_router
     from pkb.web.routes.duplicates import router as duplicates_router
     from pkb.web.routes.relations import router as relations_router
@@ -57,6 +58,7 @@ def create_app(state: AppState) -> FastAPI:
     app.include_router(analytics_router)
     app.include_router(settings_router)
     app.include_router(chat_router)
+    app.include_router(compare_router)
 
     @app.get("/")
     def dashboard(request: Request):
