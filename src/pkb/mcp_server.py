@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 from pkb.digest import DigestEngine
 
-TOOL_NAMES = {"pkb_search", "pkb_digest", "pkb_related", "pkb_stats"}
+TOOL_NAMES = {"pkb_search", "pkb_digest", "pkb_related", "pkb_stats", "pkb_ingest"}
 
 # Lazy-init state for DB connections (shared across tool calls)
 _state: dict[str, Any] = {}
@@ -36,6 +36,42 @@ def _get_state() -> dict[str, Any]:
         _state["search_engine"] = search_engine
         _state["router"] = router
     return _state
+
+
+def _build_pipeline(state: dict, kb: str | None = None) -> Any:
+    """Build an IngestPipeline for the first (or specified) KB."""
+    from pathlib import Path
+
+    from pkb.config import get_pkb_home
+    from pkb.generator.meta import MetaGenerator
+    from pkb.ingest import IngestPipeline
+    from pkb.vocab import load_domains, load_topics
+
+    config = state["config"]
+    kbs = config.knowledge_bases
+    if not kbs:
+        return None
+    kb_config = next((k for k in kbs if k.name == kb), kbs[0]) if kb else kbs[0]
+
+    pkb_home = get_pkb_home()
+    domains = load_domains(pkb_home)
+    topics = load_topics(pkb_home)
+    meta_gen = MetaGenerator(router=state["router"])
+
+    if "chunk_store" not in state:
+        from pkb.config import build_chunk_store
+
+        state["chunk_store"] = build_chunk_store(config)
+
+    return IngestPipeline(
+        repo=state["repo"],
+        chunk_store=state["chunk_store"],
+        meta_gen=meta_gen,
+        kb_path=Path(kb_config.path).expanduser(),
+        kb_name=kb_config.name,
+        domains=domains,
+        topics=topics,
+    )
 
 
 def create_mcp_server() -> FastMCP:
@@ -90,6 +126,15 @@ def create_mcp_server() -> FastMCP:
         """Get PKB statistics (bundle counts, relation counts)."""
         state = _get_state()
         return _handle_stats(state["repo"], {"kb": kb})
+
+    @mcp.tool()
+    def pkb_ingest(file_path: str, kb: str | None = None) -> str:
+        """Ingest a file (JSONL or MD) into the knowledge base."""
+        state = _get_state()
+        pipeline = _build_pipeline(state, kb=kb)
+        if pipeline is None:
+            return json.dumps({"error": "No KB configured"})
+        return _handle_ingest(pipeline, {"file_path": file_path})
 
     return mcp
 
@@ -165,6 +210,20 @@ def _handle_stats(repo: Any, args: dict) -> str:
         "total_bundles": len(bundle_ids),
         "total_relations": relation_count,
     }, indent=2)
+
+
+def _handle_ingest(pipeline: Any, args: dict) -> str:
+    """Ingest a file into the knowledge base."""
+    from pathlib import Path
+
+    file_path = Path(args["file_path"])
+    if not file_path.exists():
+        return json.dumps({"error": f"File not found: {file_path}"})
+
+    result = pipeline.ingest_file(file_path)
+    if result is None:
+        return json.dumps({"error": "Ingest returned None"})
+    return json.dumps(result, ensure_ascii=False, default=str, indent=2)
 
 
 def main() -> None:

@@ -108,3 +108,58 @@ class TestHandleStats:
         parsed = json.loads(result)
         assert parsed["total_bundles"] == 3
         assert parsed["total_relations"] == 5
+
+
+class TestHandleIngest:
+    def test_ingest_returns_bundle_info(self, tmp_path):
+        from pkb.mcp_server import _handle_ingest
+
+        # Create a real file so Path.exists() returns True
+        test_file = tmp_path / "test.jsonl"
+        test_file.write_text("{}")
+
+        mock_result = {
+            "bundle_id": "20260228-test-abc1",
+            "summary": "Test summary",
+            "domains": ["dev"],
+            "topics": ["python"],
+        }
+        mock_pipeline = MagicMock()
+        mock_pipeline.ingest_file.return_value = mock_result
+
+        result = _handle_ingest(mock_pipeline, {"file_path": str(test_file)})
+        parsed = json.loads(result)
+        assert parsed["bundle_id"] == "20260228-test-abc1"
+
+    def test_ingest_file_not_found(self):
+        from pkb.mcp_server import _handle_ingest
+
+        result = _handle_ingest(None, {"file_path": "/nonexistent/file.jsonl"})
+        parsed = json.loads(result)
+        assert "error" in parsed
+
+    def test_ingest_returns_none(self, tmp_path):
+        from pkb.mcp_server import _handle_ingest
+
+        test_file = tmp_path / "test.jsonl"
+        test_file.write_text("{}")
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.ingest_file.return_value = None
+
+        result = _handle_ingest(mock_pipeline, {"file_path": str(test_file)})
+        parsed = json.loads(result)
+        assert "error" in parsed
+
+    def test_ingest_skip_result(self, tmp_path):
+        from pkb.mcp_server import _handle_ingest
+
+        test_file = tmp_path / "test.jsonl"
+        test_file.write_text("{}")
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.ingest_file.return_value = {"status": "skip_parse_error"}
+
+        result = _handle_ingest(mock_pipeline, {"file_path": str(test_file)})
+        parsed = json.loads(result)
+        assert parsed["status"] == "skip_parse_error"
