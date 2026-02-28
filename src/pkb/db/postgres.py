@@ -176,6 +176,9 @@ class BundleRepository:
         after: date | None = None,
         before: date | None = None,
         limit: int = 10,
+        stance: str | None = None,
+        has_consensus: bool | None = None,
+        has_synthesis: bool | None = None,
     ) -> list[dict]:
         """Full-text search on bundles using tsvector.
 
@@ -210,6 +213,20 @@ class BundleRepository:
         if before:
             conditions.append("b.created_at <= %(before)s")
             params["before"] = before
+        if stance:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM bundle_responses br "
+                "WHERE br.bundle_id = b.id AND br.stance = %(stance)s)"
+            )
+            params["stance"] = stance
+        if has_consensus is True:
+            conditions.append("b.consensus IS NOT NULL AND b.consensus != ''")
+        elif has_consensus is False:
+            conditions.append("(b.consensus IS NULL OR b.consensus = '')")
+        if has_synthesis is True:
+            conditions.append("b.has_synthesis = TRUE")
+        elif has_synthesis is False:
+            conditions.append("b.has_synthesis = FALSE")
 
         where_clause = " AND ".join(conditions)
 

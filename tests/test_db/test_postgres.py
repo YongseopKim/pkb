@@ -125,6 +125,49 @@ class TestSearchFTS:
         # The tsquery should combine words with &
         assert "bitcoin" in str(params) or "bitcoin" in str(call_args)
 
+    def test_search_fts_with_stance_filter(self, repo, mock_conn):
+        """search_fts with stance filter includes bundle_responses condition."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_fts(query="test", stance="informative", limit=5)
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        params = call_args[0][1]
+        assert "bundle_responses" in sql.lower()
+        assert "stance" in sql.lower()
+        assert params["stance"] == "informative"
+
+    def test_search_fts_with_has_consensus_true(self, repo, mock_conn):
+        """search_fts with has_consensus=True includes consensus IS NOT NULL condition."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_fts(query="test", has_consensus=True, limit=5)
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "consensus is not null" in sql.lower()
+
+    def test_search_fts_with_has_consensus_false(self, repo, mock_conn):
+        """search_fts with has_consensus=False includes consensus IS NULL condition."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_fts(query="test", has_consensus=False, limit=5)
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "consensus is null" in sql.lower()
+
+    def test_search_fts_with_has_synthesis_true(self, repo, mock_conn):
+        """search_fts with has_synthesis=True includes has_synthesis = TRUE condition."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_fts(query="test", has_synthesis=True, limit=5)
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "has_synthesis" in sql.lower()
+
+    def test_search_fts_with_has_synthesis_false(self, repo, mock_conn):
+        """search_fts with has_synthesis=False includes has_synthesis = FALSE condition."""
+        mock_conn.execute.return_value.fetchall.return_value = []
+        repo.search_fts(query="test", has_synthesis=False, limit=5)
+        call_args = mock_conn.execute.call_args
+        sql = call_args[0][0]
+        assert "has_synthesis" in sql.lower()
+
 
 class TestGetBundleById:
     def test_get_existing_bundle(self, repo, mock_conn):

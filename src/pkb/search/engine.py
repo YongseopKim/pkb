@@ -32,6 +32,9 @@ class SearchEngine:
             query=query.query, kb=query.kb,
             domains=query.domains or None, topics=query.topics or None,
             after=query.after, before=query.before, limit=query.limit,
+            stance=query.stance,
+            has_consensus=query.has_consensus,
+            has_synthesis=query.has_synthesis,
         )
         if not rows:
             return []

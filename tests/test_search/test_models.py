@@ -57,6 +57,28 @@ class TestSearchQuery:
         with pytest.raises(Exception):
             SearchQuery(query="test", limit=0)
 
+    def test_search_query_accepts_stance_filter(self):
+        """SearchQuery should accept stance filter field."""
+        q = SearchQuery(query="test", stance="informative")
+        assert q.stance == "informative"
+
+    def test_search_query_accepts_has_consensus_filter(self):
+        """SearchQuery should accept has_consensus filter field."""
+        q = SearchQuery(query="test", has_consensus=True)
+        assert q.has_consensus is True
+
+    def test_search_query_accepts_has_synthesis_filter(self):
+        """SearchQuery should accept has_synthesis filter field."""
+        q = SearchQuery(query="test", has_synthesis=True)
+        assert q.has_synthesis is True
+
+    def test_search_query_new_filters_default_none(self):
+        """New filter fields should default to None."""
+        q = SearchQuery(query="test")
+        assert q.stance is None
+        assert q.has_consensus is None
+        assert q.has_synthesis is None
+
 
 class TestBundleSearchResult:
     def test_construction(self):

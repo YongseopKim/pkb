@@ -100,7 +100,38 @@ class TestKeywordSearch:
         mock_repo.search_fts.assert_called_once_with(
             query="test", kb="personal", domains=["investing"], topics=["bitcoin"],
             after=date(2026, 1, 1), before=date(2026, 12, 31), limit=5,
+            stance=None, has_consensus=None, has_synthesis=None,
         )
+
+    def test_keyword_search_passes_stance_to_fts(self, engine, mock_repo):
+        """Keyword search should pass stance filter to search_fts."""
+        mock_repo.search_fts.return_value = []
+        query = SearchQuery(
+            query="test", mode=SearchMode.KEYWORD, stance="informative",
+        )
+        engine.search(query)
+        call_kwargs = mock_repo.search_fts.call_args
+        assert call_kwargs.kwargs.get("stance") == "informative"
+
+    def test_keyword_search_passes_has_consensus_to_fts(self, engine, mock_repo):
+        """Keyword search should pass has_consensus filter to search_fts."""
+        mock_repo.search_fts.return_value = []
+        query = SearchQuery(
+            query="test", mode=SearchMode.KEYWORD, has_consensus=True,
+        )
+        engine.search(query)
+        call_kwargs = mock_repo.search_fts.call_args
+        assert call_kwargs.kwargs.get("has_consensus") is True
+
+    def test_keyword_search_passes_has_synthesis_to_fts(self, engine, mock_repo):
+        """Keyword search should pass has_synthesis filter to search_fts."""
+        mock_repo.search_fts.return_value = []
+        query = SearchQuery(
+            query="test", mode=SearchMode.KEYWORD, has_synthesis=True,
+        )
+        engine.search(query)
+        call_kwargs = mock_repo.search_fts.call_args
+        assert call_kwargs.kwargs.get("has_synthesis") is True
 
 
 class TestSemanticSearch:

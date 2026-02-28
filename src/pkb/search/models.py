@@ -25,6 +25,9 @@ class SearchQuery(BaseModel):
     after: date | None = None
     before: date | None = None
     limit: int = Field(default=10, gt=0)
+    stance: str | None = None
+    has_consensus: bool | None = None
+    has_synthesis: bool | None = None
 
 
 class BundleSearchResult(BaseModel):
