@@ -875,6 +875,23 @@ sequenceDiagram
 | 7.4 | 웹 대시보드 (/analytics, Chart.js, 5 JSON API endpoints) | ✅ |
 | 7.5 | pkb doctor (시스템 진단: DB, ChromaDB, LLM API 상태) | ✅ |
 
+### Phase 8: 자동화 파이프라인 ✅ 완료
+
+> PostIngestProcessor (인제스트 후 자동 관계/중복/갭 분석), 메타데이터 활용 강화 (consensus/divergence/key_claims/stance DB 저장 + 검색 필터), Scheduler (주기적 weekly digest/monthly report), DB migration 0006. 1213 tests.
+
+| # | 액션 아이템 | 상태 |
+|---|-----------|------|
+| 8.1 | PostIngestConfig + SchedulerConfig 모델 | ✅ |
+| 8.2 | `count_bundles_for_topics()` (gap 분석용 토픽 번들 카운트) | ✅ |
+| 8.3 | PostIngestProcessor (auto-relate, auto-dedup, gap-update) | ✅ |
+| 8.4 | IngestPipeline 통합 (post_ingest 파라미터, 3경로 호출) | ✅ |
+| 8.5 | Alembic migration 0006 (consensus, divergence, key_claims, stance 컬럼) | ✅ |
+| 8.6 | BundleRepository 메타데이터 확장 (upsert/add_response/update/get/search_claims) | ✅ |
+| 8.7 | IngestPipeline 메타데이터 저장 (consensus/divergence/has_synthesis/key_claims/stance) | ✅ |
+| 8.8 | SearchQuery 메타데이터 필터 (stance, has_consensus, has_synthesis) | ✅ |
+| 8.9 | Scheduler (JSON 상태 파일, weekly/monthly 주기 체크) | ✅ |
+| 8.10 | CLI 통합 (ingest/batch/watch에 PostIngestProcessor + Scheduler 연결) | ✅ |
+
 ### Stable ID: 불변 대화 식별자 ✅ 완료
 
 > URL 기반 SHA-256 (우선) 또는 초반 5턴 지문 (fallback)으로 대화를 고유 식별. 파일 이동 추적, 내용 변경 감지, 중복 방지를 통합 해결. question_hash 기반 SKIP 동작을 stable_id 기반 UPDATE로 전환. 1046 tests.

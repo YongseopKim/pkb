@@ -23,7 +23,7 @@ PKB는 **도구**(이 리포)와 **데이터**(별도 KB 리포)를 분리합니
 pkb/                            ← 도구 (이 리포지토리)
 ├── src/pkb/                    ← Python 패키지
 ├── prompts/                    ← LLM 프롬프트 템플릿
-├── tests/                      ← 1046개 pytest 테스트
+├── tests/                      ← 1213개 pytest 테스트
 └── pyproject.toml
 
 ~/.pkb/                         ← 글로벌 설정 (자동 생성)
@@ -200,7 +200,7 @@ git config core.hooksPath scripts/hooks
 
 ```bash
 # 테스트
-pytest                       # 1046개 테스트 (985 mock + 61 integration)
+pytest                       # 1213개 테스트 (1152 mock + 61 integration)
 
 # 통합 테스트 (Docker 필요)
 docker compose -f docker/docker-compose.test.yml up -d
@@ -225,6 +225,7 @@ pkb --version
 | **5** | ✅ 완료 | 지식 그래프 (`bundle_relations`, `pkb relate` CLI, 관계 웹 UI, D3.js 그래프 API) |
 | **6** | ✅ 완료 | 스마트 어시스턴트 (`DigestEngine`, 대화 모드 explorer/analyst/writer, MCP 서버 `pkb mcp-serve`, 다이제스트 웹 UI) |
 | **7** | ✅ 완료 | 분석 대시보드 (`AnalyticsEngine`, `ReportGenerator`, `pkb stats`/`pkb report` CLI, Chart.js 웹 대시보드) |
+| **8** | ✅ 완료 | 자동화 파이프라인 (`PostIngestProcessor` 자동 관계/중복/갭 분석, 메타데이터 활용 강화, `Scheduler` 주기적 작업) |
 
 자세한 설계는 [`docs/design-v1.md`](docs/design-v1.md)를 참조하세요.
 

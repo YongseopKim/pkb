@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PKB (Private Knowledge Base) is a Python CLI tool that processes multi-LLM conversation exports (JSONL and MD from llm-chat-exporter Chrome extension) into organized, searchable "bundles" with auto-generated metadata. The primary language of the project documents and user conversations is Korean.
 
-**Current status**: Phase 0 through Phase 7 complete. `docs/design-v1.md` is the authoritative design document.
+**Current status**: Phase 0 through Phase 8 complete. `docs/design-v1.md` is the authoritative design document. `docs/plans/2026-02-28-second-brain-evolution-design.md` defines the Phase 8-10 roadmap.
 
 ## Architecture
 
@@ -30,6 +30,8 @@ pkb/                          <- This repo (tool)
 │   ├── digest.py             <- DigestEngine (topic/domain knowledge summaries)
 │   ├── analytics.py          <- AnalyticsEngine (bundle statistics aggregation)
 │   ├── report.py             <- ReportGenerator (weekly/monthly markdown reports)
+│   ├── post_ingest.py        <- PostIngestProcessor (auto-relate, auto-dedup, gap-update)
+│   ├── scheduler.py          <- Scheduler (periodic tasks: weekly digest, monthly report)
 │   ├── doctor.py             <- System diagnostics (DB, ChromaDB, LLM API health checks)
 │   ├── mcp_server.py         <- MCP server (FastMCP, 4 tools for Claude Code)
 │   ├── logging_config.py     <- Logging setup (console + file handlers)
@@ -45,7 +47,7 @@ pkb/                          <- This repo (tool)
 │   ├── chat/                 <- RAG chatbot engine (ChatEngine, context assembly)
 │   ├── web/                  <- FastAPI web UI (htmx, Jinja2 templates)
 │   └── data/                 <- Bundled seed data (domains, topics)
-├── tests/                    <- 1046 tests (985 mock + 61 integration)
+├── tests/                    <- 1213 tests (1152 mock + 61 integration)
 ├── scripts/                  <- Build + release scripts
 │   └── hooks/                <- Git hooks (core.hooksPath target)
 ├── prompts/                  <- LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
@@ -248,6 +250,14 @@ database:
 digest:                           # Optional, all fields have defaults
   max_bundles: 20                 # Max bundles to include in digest
   max_tokens: 4096                # Max LLM response tokens
+post_ingest:                      # Optional, all fields have defaults
+  auto_relate: true               # Auto-scan bundle relations after ingest
+  auto_dedup: true                # Auto-scan duplicate detection after ingest
+  gap_update: true                # Check if bundle topics are knowledge gaps
+scheduler:                        # Optional, all fields have defaults
+  weekly_digest: true             # Enable weekly digest generation
+  monthly_report: true            # Enable monthly report generation
+  gap_threshold: 3                # Topic bundle count below this = knowledge gap
 concurrency:                      # Optional, all fields have defaults
   max_concurrent_files: 4         # Concurrent file processing workers
   max_concurrent_llm: 4           # LLM API concurrent call limit
@@ -261,8 +271,8 @@ concurrency:                      # Optional, all fields have defaults
 
 ## Repository Contents
 
-- `src/pkb/` — Python package (Phase 0 through 7 implemented)
-- `tests/` — 1046 tests (985 mock + 61 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, reembed, watcher, dedup, LLM routing, embedding, web, chat, kb, relations, digest, MCP server, analytics, doctor, stable_id
+- `src/pkb/` — Python package (Phase 0 through 8 implemented)
+- `tests/` — 1213 tests (1152 mock + 61 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, reembed, watcher, dedup, LLM routing, embedding, web, chat, kb, relations, digest, MCP server, analytics, doctor, stable_id, post-ingest, scheduler
 - `docker/` — Docker Compose for local test DB (PostgreSQL + ChromaDB)
 - `prompts/` — LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 - `docs/design-v1.md` — **Unified design document**. Single source of truth.
@@ -310,6 +320,7 @@ All MD turns are `role="assistant"`. Platform detected from header URL domain, f
 - **Phase 5** ✓: Knowledge graph — `bundle_relations` table, `RelationBuilder` (similar/related/sequel edges), `pkb relate` CLI, relations web UI
 - **Phase 6** ✓: Smart Assistant — `DigestEngine` (topic/domain summaries), conversation modes (explorer/analyst/writer), MCP server (`pkb mcp-serve`), digest web UI
 - **Phase 7** ✓: Analytics Dashboard — `AnalyticsEngine` (statistics aggregation), `ReportGenerator` (weekly/monthly reports), `pkb stats`/`pkb report` CLI, web dashboard (Chart.js)
+- **Phase 8** ✓: Automation Pipeline — `PostIngestProcessor` (auto-relate, auto-dedup, gap-update), metadata utilization (consensus/divergence/key_claims/stance stored + searchable), `Scheduler` (periodic weekly digest/monthly report), DB migration 0006
 
 ## Database Migration Workflow (Alembic)
 
@@ -321,6 +332,7 @@ Schema is managed by Alembic migrations in `src/pkb/db/migrations/versions/`. Ra
 - `0003_add_source_path_to_responses` — `bundle_responses.source_path` column + index (per-platform file tracking for merged bundles)
 - `0004_bundle_relations` — `bundle_relations` table + indexes (knowledge graph edges)
 - `0005_add_stable_id` — `bundles.stable_id` column (NOT NULL, UNIQUE) + backfill from question_hash
+- `0006_add_metadata_columns` — `bundles.consensus`, `bundles.divergence` TEXT columns + `bundle_responses.key_claims` JSONB, `bundle_responses.stance` TEXT + GIN index
 
 **Source path tracking**: `bundles.source_path` stores the first-ingested file path. `bundle_responses.source_path` stores per-platform file paths (important for merged bundles). `find_by_source_path()` checks `bundle_responses` first, then falls back to `bundles`.
 
