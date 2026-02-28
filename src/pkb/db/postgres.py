@@ -296,6 +296,32 @@ class BundleRepository:
             "has_synthesis": row[9],
         }
 
+    def get_responses_for_bundle(self, bundle_id: str) -> list[dict]:
+        """Get all platform responses for a given bundle_id.
+
+        Returns list of dicts with platform, model, turn_count,
+        key_claims, stance, source_path. Ordered by platform.
+        """
+        sql = """
+            SELECT platform, model, turn_count, key_claims, stance, source_path
+            FROM bundle_responses
+            WHERE bundle_id = %s
+            ORDER BY platform
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute(sql, (bundle_id,)).fetchall()
+        return [
+            {
+                "platform": row[0],
+                "model": row[1],
+                "turn_count": row[2],
+                "key_claims": row[3] if row[3] is not None else [],
+                "stance": row[4],
+                "source_path": row[5],
+            }
+            for row in rows
+        ]
+
     def list_all_bundle_ids(self, kb: str | None = None) -> list[str]:
         """List all bundle IDs, optionally filtered by KB."""
         with self._get_conn() as conn:
@@ -724,6 +750,44 @@ class BundleRepository:
                     "WHERE bd.domain = %s "
                     "ORDER BY b.created_at DESC",
                     (domain,),
+                ).fetchall()
+        return [
+            {
+                "bundle_id": row[0],
+                "kb": row[1],
+                "question": row[2],
+                "summary": row[3],
+                "created_at": row[4],
+            }
+            for row in rows
+        ]
+
+    def list_bundles_by_topic(
+        self,
+        topic: str,
+        kb: str | None = None,
+    ) -> list[dict]:
+        """List bundles belonging to a topic, optionally filtered by KB."""
+        with self._get_conn() as conn:
+            if kb:
+                rows = conn.execute(
+                    "SELECT b.id AS bundle_id, b.kb, b.question, b.summary, "
+                    "b.created_at "
+                    "FROM bundles b "
+                    "JOIN bundle_topics bt ON bt.bundle_id = b.id "
+                    "WHERE bt.topic = %s AND b.kb = %s "
+                    "ORDER BY b.created_at DESC",
+                    (topic, kb),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT b.id AS bundle_id, b.kb, b.question, b.summary, "
+                    "b.created_at "
+                    "FROM bundles b "
+                    "JOIN bundle_topics bt ON bt.bundle_id = b.id "
+                    "WHERE bt.topic = %s "
+                    "ORDER BY b.created_at DESC",
+                    (topic,),
                 ).fetchall()
         return [
             {
