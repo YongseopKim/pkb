@@ -137,6 +137,20 @@ def ingest(path: str, kb: str, dry_run: bool) -> None:
     router = build_llm_router(config)
     meta_gen = MetaGenerator(config.meta_llm, router=router)
 
+    # Create post-ingest processor (skip in dry-run mode)
+    post_ingest = None
+    if not dry_run:
+        from pkb.post_ingest import PostIngestProcessor
+
+        post_ingest = PostIngestProcessor(
+            repo=repo,
+            chunk_store=chunk_store,
+            config=config.post_ingest,
+            relation_config=config.relations,
+            dedup_config=config.dedup,
+            gap_threshold=config.scheduler.gap_threshold,
+        )
+
     pipeline = IngestPipeline(
         repo=repo,
         chunk_store=chunk_store,
@@ -146,6 +160,7 @@ def ingest(path: str, kb: str, dry_run: bool) -> None:
         domains=list(domains_vocab.get_ids()),
         topics=list(topics_vocab.get_approved_canonicals()),
         dry_run=dry_run,
+        post_ingest=post_ingest,
     )
 
     # Process file(s)
@@ -271,6 +286,18 @@ def batch(source_dir: str, kb: str, no_resume: bool, max_files: int, workers: in
     router = build_llm_router(config)
     meta_gen = MetaGenerator(config.meta_llm, router=router)
 
+    # Create post-ingest processor
+    from pkb.post_ingest import PostIngestProcessor
+
+    post_ingest = PostIngestProcessor(
+        repo=repo,
+        chunk_store=chunk_store,
+        config=config.post_ingest,
+        relation_config=config.relations,
+        dedup_config=config.dedup,
+        gap_threshold=config.scheduler.gap_threshold,
+    )
+
     pipeline = IngestPipeline(
         repo=repo,
         chunk_store=chunk_store,
@@ -279,6 +306,7 @@ def batch(source_dir: str, kb: str, no_resume: bool, max_files: int, workers: in
         kb_name=kb_entry.name,
         domains=list(domains_vocab.get_ids()),
         topics=list(topics_vocab.get_approved_canonicals()),
+        post_ingest=post_ingest,
     )
 
     # Build engine for concurrent mode
@@ -1262,6 +1290,30 @@ def watch(kb: str | None) -> None:
     router = build_llm_router(config)
     meta_gen = MetaGenerator(config.meta_llm, router=router)
 
+    # Create post-ingest processor
+    from pkb.post_ingest import PostIngestProcessor
+
+    post_ingest = PostIngestProcessor(
+        repo=repo,
+        chunk_store=chunk_store,
+        config=config.post_ingest,
+        relation_config=config.relations,
+        dedup_config=config.dedup,
+        gap_threshold=config.scheduler.gap_threshold,
+    )
+
+    # Create scheduler and check for due tasks
+    from pkb.scheduler import Scheduler
+
+    scheduler = Scheduler(
+        config=config.scheduler,
+        state_path=Path("~/.pkb/scheduler_state.json").expanduser(),
+    )
+    if scheduler.is_weekly_digest_due():
+        click.echo("Scheduler: weekly digest is due.")
+    if scheduler.is_monthly_report_due():
+        click.echo("Scheduler: monthly report is due.")
+
     # Build pipelines + kb_entries per KB
     pipelines: dict[str, IngestPipeline] = {}
     kb_entries_map: dict[str, object] = {}
@@ -1278,6 +1330,7 @@ def watch(kb: str | None) -> None:
             kb_name=entry.name,
             domains=list(domains_vocab.get_ids()),
             topics=list(topics_vocab.get_approved_canonicals()),
+            post_ingest=post_ingest,
         )
         kb_entries_map[watch_dir_str] = entry
         watch_dirs.append(watch_dir)

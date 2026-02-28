@@ -1705,3 +1705,209 @@ class TestReportCommand:
         assert result.exit_code == 0, result.output
         assert outfile.exists()
         assert outfile.read_text() == "# Report"
+
+
+class TestIngestPostIngestWiring:
+    """ingest 명령에서 PostIngestProcessor 생성 및 IngestPipeline 전달 검증."""
+
+    @patch("pkb.post_ingest.PostIngestProcessor")
+    @patch("pkb.ingest.move_to_done")
+    @patch("pkb.ingest.IngestPipeline")
+    @patch("pkb.config.build_llm_router")
+    @patch("pkb.generator.meta_gen.MetaGenerator")
+    @patch("pkb.config.build_chunk_store")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.vocab.loader.load_topics")
+    @patch("pkb.vocab.loader.load_domains")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_ingest_creates_post_ingest_processor(
+        self, mock_home, mock_load, mock_domains, mock_topics,
+        mock_repo_cls, mock_store_cls, mock_meta_cls, mock_build_router,
+        mock_pipeline_cls, mock_move, mock_post_ingest_cls, runner, tmp_path,
+    ):
+        """ingest 명령이 PostIngestProcessor를 생성하고 IngestPipeline에 전달한다."""
+        mock_home.return_value = tmp_path
+        (tmp_path / "vocab").mkdir()
+        mock_config = MagicMock()
+        kb_entry = MagicMock()
+        kb_entry.name = "personal"
+        kb_entry.path = tmp_path / "kb"
+        kb_entry.get_watch_dir.return_value = tmp_path / "inbox"
+        mock_config.knowledge_bases = [kb_entry]
+        mock_load.return_value = mock_config
+        mock_domains.return_value = MagicMock(get_ids=MagicMock(return_value={"dev"}))
+        mock_topics.return_value = MagicMock(
+            get_approved_canonicals=MagicMock(return_value={"python"})
+        )
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.ingest_file.return_value = {"bundle_id": "20260101-test-abc1"}
+        mock_pipeline_cls.return_value = mock_pipeline
+
+        jsonl = tmp_path / "test.jsonl"
+        jsonl.write_text('{"_meta":true}\n')
+
+        result = runner.invoke(cli, ["ingest", str(jsonl), "--kb", "personal"])
+        assert result.exit_code == 0, result.output
+
+        # PostIngestProcessor가 생성되었는지 확인
+        mock_post_ingest_cls.assert_called_once()
+        call_kwargs = mock_post_ingest_cls.call_args[1]
+        assert call_kwargs["config"] == mock_config.post_ingest
+        assert call_kwargs["relation_config"] == mock_config.relations
+        assert call_kwargs["dedup_config"] == mock_config.dedup
+        assert call_kwargs["gap_threshold"] == mock_config.scheduler.gap_threshold
+
+        # IngestPipeline에 post_ingest가 전달되었는지 확인
+        pipeline_kwargs = mock_pipeline_cls.call_args[1]
+        assert pipeline_kwargs["post_ingest"] == mock_post_ingest_cls.return_value
+
+    @patch("pkb.ingest.IngestPipeline")
+    @patch("pkb.config.build_llm_router")
+    @patch("pkb.generator.meta_gen.MetaGenerator")
+    @patch("pkb.config.build_chunk_store")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.vocab.loader.load_topics")
+    @patch("pkb.vocab.loader.load_domains")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_ingest_dry_run_skips_post_ingest(
+        self, mock_home, mock_load, mock_domains, mock_topics,
+        mock_repo_cls, mock_store_cls, mock_meta_cls, mock_build_router,
+        mock_pipeline_cls, runner, tmp_path,
+    ):
+        """dry-run 모드에서는 PostIngestProcessor를 생성하지 않는다."""
+        mock_home.return_value = tmp_path
+        (tmp_path / "vocab").mkdir()
+        mock_config = MagicMock()
+        kb_entry = MagicMock()
+        kb_entry.name = "personal"
+        kb_entry.path = tmp_path / "kb"
+        kb_entry.get_watch_dir.return_value = tmp_path / "inbox"
+        mock_config.knowledge_bases = [kb_entry]
+        mock_load.return_value = mock_config
+        mock_domains.return_value = MagicMock(get_ids=MagicMock(return_value={"dev"}))
+        mock_topics.return_value = MagicMock(
+            get_approved_canonicals=MagicMock(return_value={"python"})
+        )
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.ingest_file.return_value = {"bundle_id": "20260101-test-abc1"}
+        mock_pipeline_cls.return_value = mock_pipeline
+
+        jsonl = tmp_path / "test.jsonl"
+        jsonl.write_text('{"_meta":true}\n')
+
+        result = runner.invoke(
+            cli, ["ingest", str(jsonl), "--kb", "personal", "--dry-run"],
+        )
+        assert result.exit_code == 0, result.output
+
+        # IngestPipeline에 post_ingest=None이 전달되었는지 확인
+        pipeline_kwargs = mock_pipeline_cls.call_args[1]
+        assert pipeline_kwargs["post_ingest"] is None
+
+    @patch("pkb.post_ingest.PostIngestProcessor")
+    @patch("pkb.batch.BatchProcessor")
+    @patch("pkb.ingest.IngestPipeline")
+    @patch("pkb.config.build_llm_router")
+    @patch("pkb.generator.meta_gen.MetaGenerator")
+    @patch("pkb.config.build_chunk_store")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.vocab.loader.load_topics")
+    @patch("pkb.vocab.loader.load_domains")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_batch_creates_post_ingest_processor(
+        self, mock_home, mock_load, mock_domains, mock_topics,
+        mock_repo_cls, mock_store_cls, mock_meta_cls, mock_build_router,
+        mock_pipeline_cls, mock_batch_cls, mock_post_ingest_cls, runner, tmp_path,
+    ):
+        """batch 명령이 PostIngestProcessor를 생성하고 IngestPipeline에 전달한다."""
+        mock_home.return_value = tmp_path
+        (tmp_path / "vocab").mkdir()
+        mock_config = MagicMock()
+        kb_entry = MagicMock()
+        kb_entry.name = "personal"
+        kb_entry.path = tmp_path / "kb"
+        kb_entry.get_watch_dir.return_value = tmp_path / "inbox"
+        mock_config.knowledge_bases = [kb_entry]
+        mock_load.return_value = mock_config
+        mock_domains.return_value = MagicMock(get_ids=MagicMock(return_value={"dev"}))
+        mock_topics.return_value = MagicMock(
+            get_approved_canonicals=MagicMock(return_value={"python"})
+        )
+
+        mock_batch = MagicMock()
+        mock_batch.process.return_value = {"success": 0, "skipped": 0, "errors": 0}
+        mock_batch_cls.return_value = mock_batch
+
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "test.jsonl").write_text('{"_meta":true}\n')
+
+        result = runner.invoke(cli, ["batch", str(source), "--kb", "personal"])
+        assert result.exit_code == 0, result.output
+
+        # PostIngestProcessor가 생성되었는지 확인
+        mock_post_ingest_cls.assert_called_once()
+
+        # IngestPipeline에 post_ingest가 전달되었는지 확인
+        pipeline_kwargs = mock_pipeline_cls.call_args[1]
+        assert pipeline_kwargs["post_ingest"] == mock_post_ingest_cls.return_value
+
+
+class TestWatchSchedulerWiring:
+    """watch 명령에서 Scheduler 인스턴스 생성 검증."""
+
+    @patch("pkb.scheduler.Scheduler")
+    @patch("pkb.watcher.AsyncFileEventHandler")
+    @patch("pkb.engine.EventCollector")
+    @patch("pkb.engine.IngestEngine")
+    @patch("pkb.ingest.IngestPipeline")
+    @patch("pkb.config.build_llm_router")
+    @patch("pkb.generator.meta_gen.MetaGenerator")
+    @patch("pkb.config.build_chunk_store")
+    @patch("pkb.db.postgres.BundleRepository")
+    @patch("pkb.vocab.loader.load_topics")
+    @patch("pkb.vocab.loader.load_domains")
+    @patch("pkb.config.load_config")
+    @patch("pkb.config.get_pkb_home")
+    def test_watch_creates_scheduler(
+        self, mock_home, mock_load, mock_domains, mock_topics,
+        mock_repo_cls, mock_store_cls, mock_meta_cls, mock_build_router,
+        mock_pipeline_cls, mock_engine_cls, mock_collector_cls,
+        mock_handler_cls, mock_scheduler_cls, runner, tmp_path,
+    ):
+        """watch 명령이 Scheduler를 생성하고 due 상태를 로그한다."""
+        mock_home.return_value = tmp_path
+        (tmp_path / "vocab").mkdir()
+        mock_config = MagicMock()
+        kb_entry = MagicMock()
+        kb_entry.name = "personal"
+        kb_entry.path = tmp_path / "kb"
+        watch_dir = tmp_path / "inbox"
+        watch_dir.mkdir()
+        kb_entry.get_watch_dir.return_value = watch_dir
+        mock_config.knowledge_bases = [kb_entry]
+        mock_load.return_value = mock_config
+        mock_domains.return_value = MagicMock(get_ids=MagicMock(return_value={"dev"}))
+        mock_topics.return_value = MagicMock(
+            get_approved_canonicals=MagicMock(return_value={"python"})
+        )
+
+        mock_scheduler = MagicMock()
+        mock_scheduler.is_weekly_digest_due.return_value = True
+        mock_scheduler.is_monthly_report_due.return_value = False
+        mock_scheduler_cls.return_value = mock_scheduler
+
+        # Make asyncio.run raise KeyboardInterrupt to exit the watch loop
+        with patch("asyncio.run", side_effect=KeyboardInterrupt):
+            runner.invoke(cli, ["watch", "--kb", "personal"])
+
+        # Scheduler가 생성되었는지 확인
+        mock_scheduler_cls.assert_called_once()
+        call_kwargs = mock_scheduler_cls.call_args[1]
+        assert call_kwargs["config"] == mock_config.scheduler
+        assert "scheduler_state.json" in str(call_kwargs["state_path"])
