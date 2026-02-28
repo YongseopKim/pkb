@@ -892,6 +892,23 @@ sequenceDiagram
 | 8.9 | Scheduler (JSON 상태 파일, weekly/monthly 주기 체크) | ✅ |
 | 8.10 | CLI 통합 (ingest/batch/watch에 PostIngestProcessor + Scheduler 연결) | ✅ |
 
+### Phase 9: MCP 확장 ✅ 완료
+
+> MCP 도구 4→14개 확장. pkb_ingest, pkb_browse, pkb_detail, pkb_graph, pkb_gaps, pkb_claims, pkb_timeline, pkb_recent, pkb_compare, pkb_suggest 추가. get_responses_for_bundle(), list_bundles_by_topic() DB 메서드 신규. 1262 tests.
+
+| # | 액션 아이템 | 상태 |
+|---|-----------|------|
+| 9.1 | `get_responses_for_bundle()` DB 메서드 | ✅ |
+| 9.2 | `list_bundles_by_topic()` DB 메서드 | ✅ |
+| 9.3 | `pkb_ingest` MCP 도구 + `_build_pipeline` 헬퍼 | ✅ |
+| 9.4 | `pkb_browse` MCP 도구 (domain/topic/days 필터) | ✅ |
+| 9.5 | `pkb_detail` MCP 도구 (전체 메타+응답+관계) | ✅ |
+| 9.6 | `pkb_graph` MCP 도구 (BFS 그래프 탐색, depth 제한) | ✅ |
+| 9.7 | `pkb_gaps` + `pkb_claims` MCP 도구 | ✅ |
+| 9.8 | `pkb_timeline` + `pkb_recent` MCP 도구 | ✅ |
+| 9.9 | `pkb_compare` + `pkb_suggest` MCP 도구 | ✅ |
+| 9.10 | TOOL_NAMES 14개 + 통합 테스트 | ✅ |
+
 ### Stable ID: 불변 대화 식별자 ✅ 완료
 
 > URL 기반 SHA-256 (우선) 또는 초반 5턴 지문 (fallback)으로 대화를 고유 식별. 파일 이동 추적, 내용 변경 감지, 중복 방지를 통합 해결. question_hash 기반 SKIP 동작을 stable_id 기반 UPDATE로 전환. 1046 tests.

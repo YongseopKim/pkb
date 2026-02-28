@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PKB (Private Knowledge Base) is a Python CLI tool that processes multi-LLM conversation exports (JSONL and MD from llm-chat-exporter Chrome extension) into organized, searchable "bundles" with auto-generated metadata. The primary language of the project documents and user conversations is Korean.
 
-**Current status**: Phase 0 through Phase 8 complete. `docs/design-v1.md` is the authoritative design document. `docs/plans/2026-02-28-second-brain-evolution-design.md` defines the Phase 8-10 roadmap.
+**Current status**: Phase 0 through Phase 9 complete. `docs/design-v1.md` is the authoritative design document. `docs/plans/2026-02-28-second-brain-evolution-design.md` defines the Phase 8-10 roadmap.
 
 ## Architecture
 
@@ -33,7 +33,7 @@ pkb/                          <- This repo (tool)
 │   ├── post_ingest.py        <- PostIngestProcessor (auto-relate, auto-dedup, gap-update)
 │   ├── scheduler.py          <- Scheduler (periodic tasks: weekly digest, monthly report)
 │   ├── doctor.py             <- System diagnostics (DB, ChromaDB, LLM API health checks)
-│   ├── mcp_server.py         <- MCP server (FastMCP, 4 tools for Claude Code)
+│   ├── mcp_server.py         <- MCP server (FastMCP, 14 tools for Claude Code)
 │   ├── logging_config.py     <- Logging setup (console + file handlers)
 │   ├── constants.py          <- Platform names, path constants, skip filenames
 │   ├── models/               <- Pydantic models (jsonl, config, vocab, meta)
@@ -47,7 +47,7 @@ pkb/                          <- This repo (tool)
 │   ├── chat/                 <- RAG chatbot engine (ChatEngine, context assembly)
 │   ├── web/                  <- FastAPI web UI (htmx, Jinja2 templates)
 │   └── data/                 <- Bundled seed data (domains, topics)
-├── tests/                    <- 1213 tests (1152 mock + 61 integration)
+├── tests/                    <- 1262 tests (1201 mock + 61 integration)
 ├── scripts/                  <- Build + release scripts
 │   └── hooks/                <- Git hooks (core.hooksPath target)
 ├── prompts/                  <- LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
@@ -271,8 +271,8 @@ concurrency:                      # Optional, all fields have defaults
 
 ## Repository Contents
 
-- `src/pkb/` — Python package (Phase 0 through 8 implemented)
-- `tests/` — 1213 tests (1152 mock + 61 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, reembed, watcher, dedup, LLM routing, embedding, web, chat, kb, relations, digest, MCP server, analytics, doctor, stable_id, post-ingest, scheduler
+- `src/pkb/` — Python package (Phase 0 through 9 implemented)
+- `tests/` — 1262 tests (1201 mock + 61 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, reembed, watcher, dedup, LLM routing, embedding, web, chat, kb, relations, digest, MCP server (14 tools), analytics, doctor, stable_id, post-ingest, scheduler
 - `docker/` — Docker Compose for local test DB (PostgreSQL + ChromaDB)
 - `prompts/` — LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 - `docs/design-v1.md` — **Unified design document**. Single source of truth.
@@ -321,6 +321,7 @@ All MD turns are `role="assistant"`. Platform detected from header URL domain, f
 - **Phase 6** ✓: Smart Assistant — `DigestEngine` (topic/domain summaries), conversation modes (explorer/analyst/writer), MCP server (`pkb mcp-serve`), digest web UI
 - **Phase 7** ✓: Analytics Dashboard — `AnalyticsEngine` (statistics aggregation), `ReportGenerator` (weekly/monthly reports), `pkb stats`/`pkb report` CLI, web dashboard (Chart.js)
 - **Phase 8** ✓: Automation Pipeline — `PostIngestProcessor` (auto-relate, auto-dedup, gap-update), metadata utilization (consensus/divergence/key_claims/stance stored + searchable), `Scheduler` (periodic weekly digest/monthly report), DB migration 0006
+- **Phase 9** ✓: MCP Extension — 4→14 tools (`pkb_ingest`, `pkb_browse`, `pkb_detail`, `pkb_graph`, `pkb_gaps`, `pkb_claims`, `pkb_timeline`, `pkb_recent`, `pkb_compare`, `pkb_suggest`), `get_responses_for_bundle()`, `list_bundles_by_topic()` DB methods
 
 ## Database Migration Workflow (Alembic)
 
