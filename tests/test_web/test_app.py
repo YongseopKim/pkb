@@ -222,3 +222,45 @@ class TestDashboardEnhanced:
         resp = client.get("/")
         assert resp.status_code == 200
         assert "domainMiniChart" in resp.text or "chart.js" in resp.text.lower()
+
+
+class TestBundleDetailCompareLink:
+    def test_bundle_detail_has_compare_link(self, client, mock_state):
+        """Bundle detail should have Compare button when multi-platform."""
+        mock_state.repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-test-abc1",
+            "question": "Test question",
+            "summary": "Test summary",
+            "kb": "personal",
+            "domains": "dev",
+            "topics": "python",
+            "created_at": None,
+        }
+        mock_state.repo.get_responses_for_bundle.return_value = [
+            {"platform": "claude", "model": "m1", "turn_count": 3,
+             "key_claims": [], "stance": "", "source_path": None},
+            {"platform": "chatgpt", "model": "m2", "turn_count": 2,
+             "key_claims": [], "stance": "", "source_path": None},
+        ]
+        resp = client.get("/bundles/20260101-test-abc1")
+        assert resp.status_code == 200
+        assert "/compare/20260101-test-abc1" in resp.text
+
+    def test_bundle_detail_no_compare_single_platform(self, client, mock_state):
+        """Bundle detail should NOT have Compare button for single platform."""
+        mock_state.repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-test-abc1",
+            "question": "Test question",
+            "summary": "Test summary",
+            "kb": "personal",
+            "domains": "dev",
+            "topics": "python",
+            "created_at": None,
+        }
+        mock_state.repo.get_responses_for_bundle.return_value = [
+            {"platform": "claude", "model": "m1", "turn_count": 3,
+             "key_claims": [], "stance": "", "source_path": None},
+        ]
+        resp = client.get("/bundles/20260101-test-abc1")
+        assert resp.status_code == 200
+        assert "/compare/20260101-test-abc1" not in resp.text

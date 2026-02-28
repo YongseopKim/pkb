@@ -51,8 +51,11 @@ def bundle_detail(request: Request, bundle_id: str):
             "message": f"Bundle '{bundle_id}' not found.",
         }, status_code=404)
 
+    responses = pkb.repo.get_responses_for_bundle(bundle_id)
+
     return templates.TemplateResponse(request, "bundles/detail.html", {
         "bundle": bundle,
+        "responses": responses,
     })
 
 
