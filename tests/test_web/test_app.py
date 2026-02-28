@@ -290,3 +290,13 @@ class TestChatUIEnhanced:
         resp = client.post("/chat/send", data={"message": "What is GIL?"})
         assert resp.status_code == 200
         assert "20260101-python-abc1" in resp.text
+
+
+class TestStyleConsistency:
+    def test_static_css_loads(self, client, mock_state):
+        """Static CSS should be accessible and contain new component styles."""
+        resp = client.get("/static/style.css")
+        assert resp.status_code == 200
+        assert "dashboard-grid" in resp.text
+        assert "compare-grid" in resp.text
+        assert "chat-layout" in resp.text
