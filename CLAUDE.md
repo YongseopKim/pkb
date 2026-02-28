@@ -47,7 +47,7 @@ pkb/                          <- This repo (tool)
 │   ├── chat/                 <- RAG chatbot engine (ChatEngine, context assembly)
 │   ├── web/                  <- FastAPI web UI (htmx, Jinja2, D3.js graph, Chart.js, compare view)
 │   └── data/                 <- Bundled seed data (domains, topics)
-├── tests/                    <- 1279 tests (1223 mock + 56 integration)
+├── tests/                    <- 1342 tests (1286 mock + 56 integration)
 ├── scripts/                  <- Build + release scripts
 │   └── hooks/                <- Git hooks (core.hooksPath target)
 ├── prompts/                  <- LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
@@ -98,7 +98,7 @@ git config core.hooksPath scripts/hooks   # Required after fresh clone
 
 ```bash
 pip install -e ".[dev]"          # Install in dev mode (includes all deps)
-pytest                            # Run 1279 tests (1223 mock + 56 integration with PKB_DB_INTEGRATION=1)
+pytest                            # Run 1342 tests (1286 mock + 56 integration with PKB_DB_INTEGRATION=1)
 ruff check src/ tests/            # Lint (line-length=100)
 pkb --version                     # CLI version check
 pkb -v <command>                  # Verbose mode (INFO logging to console + file)
@@ -272,7 +272,7 @@ concurrency:                      # Optional, all fields have defaults
 ## Repository Contents
 
 - `src/pkb/` — Python package (Phase 0 through 10 implemented)
-- `tests/` — 1279 tests (1223 mock + 56 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, reembed, watcher, dedup, LLM routing, embedding, web (app, analytics, relations, compare), chat, kb, relations, digest, MCP server (14 tools), analytics, doctor, stable_id, post-ingest, scheduler
+- `tests/` — 1342 tests (1286 mock + 56 integration) covering models, parser (JSONL + MD), vocab, config, CLI, DB, migrations, generator, ingest, batch, engine, search, reindex, regenerate, reembed, watcher, dedup, LLM routing, embedding, web (app, analytics, relations, compare), chat, kb, relations, digest, MCP server (14 tools), analytics, doctor, stable_id, post-ingest, scheduler
 - `docker/` — Docker Compose for local test DB (PostgreSQL + ChromaDB)
 - `prompts/` — LLM prompt templates (response_meta, bundle_meta, chat_system, chat_analyst, chat_writer)
 - `docs/design-v1.md` — **Unified design document**. Single source of truth.
