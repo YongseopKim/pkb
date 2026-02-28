@@ -2070,3 +2070,377 @@ class TestPostIngestIntegration:
         assert "bundle_id" in result
         # post_ingest.process was called (and raised), but ingest succeeded
         failing_post_ingest.process.assert_called_once()
+
+
+class TestIngestMetadataStorage:
+    """IngestPipeline이 LLM 메타데이터를 DB에 전달하는지 검증.
+
+    consensus, divergence, key_claims, stance 필드 확인.
+    """
+
+    @pytest.fixture
+    def mock_deps(self, tmp_path):
+        """Create mocked dependencies for IngestPipeline."""
+        repo = MagicMock()
+        repo.find_bundle_by_stable_id.return_value = None
+        chunk_store = MagicMock()
+        meta_gen = MagicMock()
+        meta_gen.generate_response_meta.return_value = MagicMock(
+            platform="claude",
+            model="claude-sonnet",
+            summary="응답 요약",
+            key_claims=["주장1", "주장2"],
+            stance="informative",
+            model_dump=MagicMock(return_value={
+                "platform": "claude",
+                "model": "claude-sonnet",
+                "summary": "응답 요약",
+                "key_claims": ["주장1", "주장2"],
+                "stance": "informative",
+            }),
+        )
+        meta_gen.generate_bundle_meta.return_value = MagicMock(
+            summary="번들 요약",
+            slug="test-slug",
+            domains=["dev"],
+            topics=["python"],
+            pending_topics=[],
+            consensus="모든 LLM이 async는 비동기 프로그래밍 핵심이라 동의",
+            divergence="구현 세부사항에서 차이",
+            model_dump=MagicMock(return_value={
+                "summary": "번들 요약",
+                "slug": "test-slug",
+                "domains": ["dev"],
+                "topics": ["python"],
+                "pending_topics": [],
+                "consensus": "모든 LLM이 async는 비동기 프로그래밍 핵심이라 동의",
+                "divergence": "구현 세부사항에서 차이",
+            }),
+        )
+        kb_path = tmp_path / "kb-test"
+        kb_path.mkdir()
+        return {
+            "repo": repo,
+            "chunk_store": chunk_store,
+            "meta_gen": meta_gen,
+            "kb_path": kb_path,
+            "kb_name": "test",
+        }
+
+    @pytest.fixture
+    def pipeline(self, mock_deps):
+        return IngestPipeline(
+            repo=mock_deps["repo"],
+            chunk_store=mock_deps["chunk_store"],
+            meta_gen=mock_deps["meta_gen"],
+            kb_path=mock_deps["kb_path"],
+            kb_name=mock_deps["kb_name"],
+            domains=["dev", "invest"],
+            topics=["python", "system-design"],
+        )
+
+    @pytest.fixture
+    def sample_jsonl(self, tmp_path):
+        """Create a sample JSONL file."""
+        jsonl_path = tmp_path / "source" / "claude.jsonl"
+        jsonl_path.parent.mkdir(parents=True)
+        lines = [
+            json.dumps({
+                "_meta": True,
+                "platform": "claude",
+                "url": "https://claude.ai/chat/123",
+                "exported_at": "2026-02-21T06:00:00.000Z",
+                "title": "테스트 대화",
+            }),
+            json.dumps({
+                "role": "user",
+                "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T06:00:01.000Z",
+            }),
+            json.dumps({
+                "role": "assistant",
+                "content": _ASYNC_ANSWER,
+                "timestamp": "2026-02-21T06:00:02.000Z",
+            }),
+        ]
+        jsonl_path.write_text("\n".join(lines), encoding="utf-8")
+        return jsonl_path
+
+    def test_create_new_bundle_stores_consensus_divergence(
+        self, pipeline, sample_jsonl, mock_deps,
+    ):
+        """_create_new_bundle에서 upsert_bundle에 consensus, divergence, has_synthesis 전달."""
+        result = pipeline.ingest_file(sample_jsonl, force=True)
+
+        assert result is not None
+        call_kwargs = mock_deps["repo"].upsert_bundle.call_args[1]
+        assert call_kwargs["consensus"] == "모든 LLM이 async는 비동기 프로그래밍 핵심이라 동의"
+        assert call_kwargs["divergence"] == "구현 세부사항에서 차이"
+        assert call_kwargs["has_synthesis"] is True
+
+    def test_create_new_bundle_stores_key_claims_stance(
+        self, pipeline, sample_jsonl, mock_deps,
+    ):
+        """_create_new_bundle에서 responses dict에 key_claims, stance 포함."""
+        result = pipeline.ingest_file(sample_jsonl, force=True)
+
+        assert result is not None
+        call_kwargs = mock_deps["repo"].upsert_bundle.call_args[1]
+        responses = call_kwargs["responses"]
+        assert len(responses) == 1
+        assert responses[0]["key_claims"] == ["주장1", "주장2"]
+        assert responses[0]["stance"] == "informative"
+
+    def test_has_synthesis_true_when_consensus_exists(
+        self, pipeline, sample_jsonl, mock_deps,
+    ):
+        """consensus가 있으면 has_synthesis=True."""
+        # consensus만 있고 divergence는 None
+        mock_deps["meta_gen"].generate_bundle_meta.return_value = MagicMock(
+            summary="번들 요약",
+            slug="test-slug",
+            domains=["dev"],
+            topics=["python"],
+            pending_topics=[],
+            consensus="합의점 존재",
+            divergence=None,
+            model_dump=MagicMock(return_value={
+                "summary": "번들 요약", "slug": "test-slug",
+                "domains": ["dev"], "topics": ["python"],
+                "pending_topics": [], "consensus": "합의점 존재", "divergence": None,
+            }),
+        )
+
+        result = pipeline.ingest_file(sample_jsonl, force=True)
+
+        assert result is not None
+        call_kwargs = mock_deps["repo"].upsert_bundle.call_args[1]
+        assert call_kwargs["has_synthesis"] is True
+
+    def test_has_synthesis_false_when_no_consensus_divergence(
+        self, pipeline, sample_jsonl, mock_deps,
+    ):
+        """consensus와 divergence 둘 다 None이면 has_synthesis=False."""
+        mock_deps["meta_gen"].generate_bundle_meta.return_value = MagicMock(
+            summary="번들 요약",
+            slug="test-slug",
+            domains=["dev"],
+            topics=["python"],
+            pending_topics=[],
+            consensus=None,
+            divergence=None,
+            model_dump=MagicMock(return_value={
+                "summary": "번들 요약", "slug": "test-slug",
+                "domains": ["dev"], "topics": ["python"],
+                "pending_topics": [], "consensus": None, "divergence": None,
+            }),
+        )
+
+        result = pipeline.ingest_file(sample_jsonl, force=True)
+
+        assert result is not None
+        call_kwargs = mock_deps["repo"].upsert_bundle.call_args[1]
+        assert call_kwargs["has_synthesis"] is False
+
+    def test_update_existing_bundle_stores_consensus_divergence(
+        self, pipeline, sample_jsonl, mock_deps,
+    ):
+        """_update_existing_bundle에서 update_bundle_meta에 메타데이터 전달."""
+        bundle_id = "20260221-existing-a3f2"
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = {
+            "bundle_id": bundle_id,
+            "kb": "test",
+            "path": f"bundles/{bundle_id}",
+            "platforms": ["claude"],
+            "domains": ["dev"],
+            "topics": ["python"],
+        }
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        (bundle_dir / "_raw").mkdir(parents=True)
+
+        result = pipeline.ingest_file(sample_jsonl)
+
+        assert result is not None
+        assert result.get("updated") is True
+        call_kwargs = mock_deps["repo"].update_bundle_meta.call_args[1]
+        assert call_kwargs["consensus"] == "모든 LLM이 async는 비동기 프로그래밍 핵심이라 동의"
+        assert call_kwargs["divergence"] == "구현 세부사항에서 차이"
+        assert call_kwargs["has_synthesis"] is True
+
+    def test_update_existing_bundle_stores_key_claims_stance(
+        self, pipeline, sample_jsonl, mock_deps,
+    ):
+        """_update_existing_bundle에서 add_response_to_bundle에 key_claims, stance 전달."""
+        bundle_id = "20260221-existing-a3f2"
+        mock_deps["repo"].find_bundle_by_stable_id.return_value = {
+            "bundle_id": bundle_id,
+            "kb": "test",
+            "path": f"bundles/{bundle_id}",
+            "platforms": ["claude"],
+            "domains": ["dev"],
+            "topics": ["python"],
+        }
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        (bundle_dir / "_raw").mkdir(parents=True)
+
+        result = pipeline.ingest_file(sample_jsonl)
+
+        assert result is not None
+        assert result.get("updated") is True
+        call_kwargs = mock_deps["repo"].add_response_to_bundle.call_args[1]
+        assert call_kwargs["key_claims"] == ["주장1", "주장2"]
+        assert call_kwargs["stance"] == "informative"
+
+    def test_merge_file_stores_consensus_divergence(
+        self, pipeline, mock_deps, tmp_path,
+    ):
+        """merge_file에서 update_bundle_meta에 consensus, divergence, has_synthesis 전달."""
+        bundle_id = "20260221-test-slug-a3f2"
+        existing_bundle = {
+            "bundle_id": bundle_id,
+            "kb": "test",
+            "path": f"bundles/{bundle_id}",
+            "platforms": ["claude"],
+            "domains": ["dev"],
+            "topics": ["python"],
+        }
+        # Create existing bundle dir with raw file
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        raw_dir = bundle_dir / "_raw"
+        raw_dir.mkdir(parents=True)
+        claude_lines = [
+            json.dumps({
+                "_meta": True, "platform": "claude",
+                "url": "https://claude.ai/chat/123",
+                "exported_at": "2026-02-21T06:00:00.000Z", "title": "테스트",
+            }),
+            json.dumps({
+                "role": "user", "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T06:00:01.000Z",
+            }),
+            json.dumps({
+                "role": "assistant", "content": _ASYNC_ANSWER,
+                "timestamp": "2026-02-21T06:00:02.000Z",
+            }),
+        ]
+        (raw_dir / "claude.jsonl").write_text("\n".join(claude_lines), encoding="utf-8")
+
+        # ChatGPT JSONL for merge
+        chatgpt_jsonl = tmp_path / "source" / "chatgpt.jsonl"
+        chatgpt_jsonl.parent.mkdir(parents=True)
+        lines = [
+            json.dumps({
+                "_meta": True, "platform": "chatgpt",
+                "url": "https://chatgpt.com/c/456",
+                "exported_at": "2026-02-21T07:00:00.000Z", "title": "테스트",
+            }),
+            json.dumps({
+                "role": "user", "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T07:00:01.000Z",
+            }),
+            json.dumps({
+                "role": "assistant", "content": _CHATGPT_ANSWER,
+                "timestamp": "2026-02-21T07:00:02.000Z",
+            }),
+        ]
+        chatgpt_jsonl.write_text("\n".join(lines), encoding="utf-8")
+
+        # Set up merge response meta for chatgpt
+        mock_deps["meta_gen"].generate_response_meta.return_value = MagicMock(
+            platform="chatgpt",
+            model="gpt-4o",
+            summary="ChatGPT 응답 요약",
+            key_claims=["chatgpt 주장1"],
+            stance="analytical",
+            model_dump=MagicMock(return_value={
+                "platform": "chatgpt", "model": "gpt-4o",
+                "summary": "ChatGPT 응답 요약",
+                "key_claims": ["chatgpt 주장1"], "stance": "analytical",
+            }),
+        )
+
+        from pkb.parser.directory import parse_file
+        conv = parse_file(chatgpt_jsonl)
+        result = pipeline.merge_file(chatgpt_jsonl, conv, existing_bundle)
+
+        assert result is not None
+        assert result.get("merged") is True
+        call_kwargs = mock_deps["repo"].update_bundle_meta.call_args[1]
+        assert call_kwargs["consensus"] == "모든 LLM이 async는 비동기 프로그래밍 핵심이라 동의"
+        assert call_kwargs["divergence"] == "구현 세부사항에서 차이"
+        assert call_kwargs["has_synthesis"] is True
+
+    def test_merge_file_stores_key_claims_stance(
+        self, pipeline, mock_deps, tmp_path,
+    ):
+        """merge_file에서 add_response_to_bundle에 key_claims, stance 전달."""
+        bundle_id = "20260221-test-slug-a3f2"
+        existing_bundle = {
+            "bundle_id": bundle_id,
+            "kb": "test",
+            "path": f"bundles/{bundle_id}",
+            "platforms": ["claude"],
+            "domains": ["dev"],
+            "topics": ["python"],
+        }
+        bundle_dir = mock_deps["kb_path"] / "bundles" / bundle_id
+        raw_dir = bundle_dir / "_raw"
+        raw_dir.mkdir(parents=True)
+        claude_lines = [
+            json.dumps({
+                "_meta": True, "platform": "claude",
+                "url": "https://claude.ai/chat/123",
+                "exported_at": "2026-02-21T06:00:00.000Z", "title": "테스트",
+            }),
+            json.dumps({
+                "role": "user", "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T06:00:01.000Z",
+            }),
+            json.dumps({
+                "role": "assistant", "content": _ASYNC_ANSWER,
+                "timestamp": "2026-02-21T06:00:02.000Z",
+            }),
+        ]
+        (raw_dir / "claude.jsonl").write_text("\n".join(claude_lines), encoding="utf-8")
+
+        chatgpt_jsonl = tmp_path / "source" / "chatgpt.jsonl"
+        chatgpt_jsonl.parent.mkdir(parents=True)
+        lines = [
+            json.dumps({
+                "_meta": True, "platform": "chatgpt",
+                "url": "https://chatgpt.com/c/456",
+                "exported_at": "2026-02-21T07:00:00.000Z", "title": "테스트",
+            }),
+            json.dumps({
+                "role": "user", "content": "파이썬에서 async가 뭐야?",
+                "timestamp": "2026-02-21T07:00:01.000Z",
+            }),
+            json.dumps({
+                "role": "assistant", "content": _CHATGPT_ANSWER,
+                "timestamp": "2026-02-21T07:00:02.000Z",
+            }),
+        ]
+        chatgpt_jsonl.write_text("\n".join(lines), encoding="utf-8")
+
+        mock_deps["meta_gen"].generate_response_meta.return_value = MagicMock(
+            platform="chatgpt",
+            model="gpt-4o",
+            summary="ChatGPT 응답 요약",
+            key_claims=["chatgpt 주장1"],
+            stance="analytical",
+            model_dump=MagicMock(return_value={
+                "platform": "chatgpt", "model": "gpt-4o",
+                "summary": "ChatGPT 응답 요약",
+                "key_claims": ["chatgpt 주장1"], "stance": "analytical",
+            }),
+        )
+
+        from pkb.parser.directory import parse_file
+        conv = parse_file(chatgpt_jsonl)
+        result = pipeline.merge_file(chatgpt_jsonl, conv, existing_bundle)
+
+        assert result is not None
+        assert result.get("merged") is True
+        call_kwargs = mock_deps["repo"].add_response_to_bundle.call_args[1]
+        assert call_kwargs["key_claims"] == ["chatgpt 주장1"]
+        assert call_kwargs["stance"] == "analytical"

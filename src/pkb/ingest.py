@@ -348,6 +348,9 @@ class IngestPipeline:
                 question=question,
                 question_hash=question_hash,
                 source_path=str(file_path),
+                consensus=bundle_meta.consensus,
+                divergence=bundle_meta.divergence,
+                has_synthesis=bool(bundle_meta.consensus or bundle_meta.divergence),
             )
             self._repo.add_response_to_bundle(
                 bundle_id=bundle_id,
@@ -355,6 +358,8 @@ class IngestPipeline:
                 model=response_meta.model,
                 turn_count=conv.turn_count,
                 source_path=str(file_path),
+                key_claims=response_meta.key_claims,
+                stance=response_meta.stance,
             )
 
             # 7. ChromaDB: delete all chunks, re-chunk from ALL raw files
@@ -478,11 +483,16 @@ class IngestPipeline:
                 domains=bundle_meta.domains,
                 topics=bundle_meta.topics,
                 pending_topics=bundle_meta.pending_topics,
+                consensus=bundle_meta.consensus,
+                divergence=bundle_meta.divergence,
+                has_synthesis=bool(bundle_meta.consensus or bundle_meta.divergence),
                 responses=[{
                     "platform": conv.meta.platform,
                     "model": response_meta.model,
                     "turn_count": conv.turn_count,
                     "source_path": str(file_path),
+                    "key_claims": response_meta.key_claims,
+                    "stance": response_meta.stance,
                 }],
                 source_path=str(file_path),
             )
@@ -579,6 +589,8 @@ class IngestPipeline:
                 model=response_meta.model,
                 turn_count=conv.turn_count,
                 source_path=str(file_path),
+                key_claims=response_meta.key_claims,
+                stance=response_meta.stance,
             )
             self._repo.update_bundle_meta(
                 bundle_id=bundle_id,
@@ -586,6 +598,9 @@ class IngestPipeline:
                 domains=bundle_meta.domains,
                 topics=bundle_meta.topics,
                 pending_topics=bundle_meta.pending_topics,
+                consensus=bundle_meta.consensus,
+                divergence=bundle_meta.divergence,
+                has_synthesis=bool(bundle_meta.consensus or bundle_meta.divergence),
             )
 
             # 8. ChromaDB: upsert new platform chunks
