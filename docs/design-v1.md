@@ -909,6 +909,21 @@ sequenceDiagram
 | 9.9 | `pkb_compare` + `pkb_suggest` MCP 도구 | ✅ |
 | 9.10 | TOOL_NAMES 14개 + 통합 테스트 | ✅ |
 
+### Phase 10: Web UI 강화 ✅ 완료
+
+> D3.js force-directed 지식 그래프 시각화, 인사이트 중심 대시보드 재설계, LLM 응답 비교 뷰 (consensus/divergence 하이라이팅), Chat 3-panel layout (context sidebar + htmx OOB swap). 1279 tests.
+
+| # | 액션 아이템 | 상태 |
+|---|-----------|------|
+| 10.1 | Knowledge Graph 시각화 (`/relations/graph`, D3.js force-directed, zoom/drag/filter) | ✅ |
+| 10.2 | `/relations/api/graph` 노드 메타데이터 확장 (question, domains, topics) | ✅ |
+| 10.3 | 대시보드 재설계 (stat cards + 2x2 grid: recent activity, knowledge gaps, domain chart, trend chart) | ✅ |
+| 10.4 | 비교 뷰 라우트 (`/compare/{bundle_id}`, `/compare/api/{bundle_id}`) | ✅ |
+| 10.5 | Consensus 감지 (Counter 기반, 2+ 플랫폼 공통 claims) | ✅ |
+| 10.6 | 번들 상세 → Compare 링크 (multi-platform일 때만 표시) | ✅ |
+| 10.7 | Chat 3-panel layout (chat + context sidebar + htmx OOB swap) | ✅ |
+| 10.8 | CSS 통합 (dashboard-grid, compare-grid, chat-layout, graph 스타일) | ✅ |
+
 ### Stable ID: 불변 대화 식별자 ✅ 완료
 
 > URL 기반 SHA-256 (우선) 또는 초반 5턴 지문 (fallback)으로 대화를 고유 식별. 파일 이동 추적, 내용 변경 감지, 중복 방지를 통합 해결. question_hash 기반 SKIP 동작을 stable_id 기반 UPDATE로 전환. 1046 tests.
