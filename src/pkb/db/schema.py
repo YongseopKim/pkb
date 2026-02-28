@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS bundles (
     question_hash TEXT,
     stable_id TEXT NOT NULL,
     source_path TEXT,
+    consensus TEXT,
+    divergence TEXT,
     tsv tsvector
 );
 
@@ -78,10 +80,13 @@ CREATE TABLE IF NOT EXISTS bundle_responses (
     model TEXT,
     turn_count INTEGER,
     source_path TEXT,
+    key_claims JSONB DEFAULT '[]'::JSONB,
+    stance TEXT,
     PRIMARY KEY (bundle_id, platform)
 );
 
 CREATE INDEX IF NOT EXISTS idx_bundle_responses_source_path ON bundle_responses (source_path);
+CREATE INDEX IF NOT EXISTS idx_responses_key_claims ON bundle_responses USING GIN (key_claims);
 
 -- Duplicate pair tracking
 CREATE TABLE IF NOT EXISTS duplicate_pairs (
