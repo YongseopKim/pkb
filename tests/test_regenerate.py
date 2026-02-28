@@ -120,14 +120,27 @@ class TestRegenerateBundle:
         assert result["status"] == "error"
         assert "not found" in result["reason"].lower()
 
+    def test_regenerate_preserves_existing_stable_id(self, regenerator, mock_repo):
+        """regenerate should preserve existing stable_id, not recompute it."""
+        mock_repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-test-abc1",
+            "stable_id": "original-stable-id-from-db",
+        }
+        regenerator.regenerate_bundle("20260101-test-abc1")
+        call_kwargs = mock_repo.upsert_bundle.call_args[1]
+        assert call_kwargs["stable_id"] == "original-stable-id-from-db"
+
     def test_regenerate_increments_meta_version(self, regenerator, mock_repo):
+        mock_repo.get_bundle_by_id.return_value = {
+            "bundle_id": "20260101-test-abc1",
+            "stable_id": "existing-stable-id",
+        }
         regenerator.regenerate_bundle("20260101-test-abc1")
         call_kwargs = mock_repo.upsert_bundle.call_args[1]
         # The bundle should be upserted (ON CONFLICT will update meta_version)
         assert call_kwargs["bundle_id"] == "20260101-test-abc1"
-        assert "stable_id" in call_kwargs
-        assert isinstance(call_kwargs["stable_id"], str)
-        assert len(call_kwargs["stable_id"]) > 0
+        # stable_id should be preserved from DB, not recomputed
+        assert call_kwargs["stable_id"] == "existing-stable-id"
 
     def test_regenerate_dry_run(
         self, mock_repo, mock_chunk_store, mock_meta_gen, kb_dir

@@ -175,11 +175,12 @@ class TestGetBundleById:
             "20260221-bitcoin-a3f2", "personal", "Bitcoin halving이란?",
             "비트코인 반감기 분석", datetime(2026, 2, 21, tzinfo=timezone.utc),
             "investing", "bitcoin,crypto",
-            None, None, False,
+            None, None, False, "abc123stable",
         )
         result = repo.get_bundle_by_id("20260221-bitcoin-a3f2")
         assert result is not None
         assert result["bundle_id"] == "20260221-bitcoin-a3f2"
+        assert result["stable_id"] == "abc123stable"
 
     def test_get_nonexistent_bundle(self, repo, mock_conn):
         mock_conn.execute.return_value.fetchone.return_value = None
@@ -1087,7 +1088,7 @@ class TestGetBundleByIdWithMetadata:
             "3개 LLM 비교 요약",
             datetime(2026, 2, 28, tzinfo=timezone.utc),
             "dev", "llm",
-            "모든 LLM 동의", "프레임워크 차이", True,
+            "모든 LLM 동의", "프레임워크 차이", True, "stable1",
         )
         result = repo.get_bundle_by_id("20260228-test-a1b2")
         assert result is not None
@@ -1101,7 +1102,7 @@ class TestGetBundleByIdWithMetadata:
             "3개 LLM 비교 요약",
             datetime(2026, 2, 28, tzinfo=timezone.utc),
             "dev", "llm",
-            "합의", "의견 차이", False,
+            "합의", "의견 차이", False, "stable2",
         )
         result = repo.get_bundle_by_id("20260228-test-a1b2")
         assert result is not None
@@ -1115,7 +1116,7 @@ class TestGetBundleByIdWithMetadata:
             "요약",
             datetime(2026, 2, 28, tzinfo=timezone.utc),
             "dev", "llm",
-            None, None, True,
+            None, None, True, "stable3",
         )
         result = repo.get_bundle_by_id("20260228-test-a1b2")
         assert result is not None

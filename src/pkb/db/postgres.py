@@ -275,7 +275,7 @@ class BundleRepository:
                        (SELECT string_agg(bt.topic, ',') FROM bundle_topics bt
                         WHERE bt.bundle_id = b.id AND bt.is_pending = FALSE), ''
                    ) AS topics,
-                   b.consensus, b.divergence, b.has_synthesis
+                   b.consensus, b.divergence, b.has_synthesis, b.stable_id
             FROM bundles b
             WHERE b.id = %s
         """
@@ -294,6 +294,7 @@ class BundleRepository:
             "consensus": row[7],
             "divergence": row[8],
             "has_synthesis": row[9],
+            "stable_id": row[10],
         }
 
     def get_responses_for_bundle(self, bundle_id: str) -> list[dict]:

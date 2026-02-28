@@ -70,7 +70,12 @@ class Regenerator:
         # Parse input file (use first file)
         conv = parse_file(raw_files[0])
         question, question_hash = compute_question_hash(conv)
-        stable_id = compute_stable_id(conv)
+
+        # Preserve existing stable_id from DB (regenerate should not change identity)
+        existing = self._repo.get_bundle_by_id(bundle_id)
+        stable_id = (
+            existing.get("stable_id") if existing else None
+        ) or compute_stable_id(conv)
 
         # Generate bundle meta (re-run LLM)
         response_summaries = self._build_response_summaries(conv)
