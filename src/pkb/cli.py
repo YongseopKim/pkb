@@ -318,7 +318,8 @@ def batch(source_dir: str, kb: str, no_resume: bool, max_files: int, workers: in
 
         def _ingest_with_move(path):
             result = pipeline.ingest_file(path)
-            move_to_done(path, watch_dir)
+            if result is None or result.get("status") != "skip_file_not_found":
+                move_to_done(path, watch_dir)
             return result
 
         engine = IngestEngine(
@@ -1182,7 +1183,7 @@ def _build_watch_ingest_fn(
         # stable_id based dedup handles CREATE/UPDATE/MERGE automatically
         result = pipeline.ingest_file(file_path)
 
-        if kb_entry:
+        if kb_entry and (result is None or result.get("status") != "skip_file_not_found"):
             move_to_done(file_path, kb_entry.get_watch_dir())
         return result
 

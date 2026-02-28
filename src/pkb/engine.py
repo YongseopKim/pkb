@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -40,10 +40,11 @@ class IngestStats:
     skipped: int = 0
     errors: int = 0
     total: int = 0
+    results: list[IngestResult] = field(default_factory=list)
 
     @classmethod
     def from_results(cls, results: list[IngestResult]) -> IngestStats:
-        stats = cls(total=len(results))
+        stats = cls(total=len(results), results=results)
         for r in results:
             if r.status in ("ok", "merged"):
                 stats.success += 1
